@@ -1,6 +1,9 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import * as pdfjsLib from "pdfjs-dist";
 
+// Configure PDF.js worker (required for pdfjs-dist v4+)
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
 // ─── TYPES ───────────────────────────────────────────────────────────
 type FileCategory = 'personality' | 'knowledge' | 'instructions' | 'examples' | 'context' | 'preferences';
 type AppStep = 'upload' | 'organize' | 'configure' | 'generate';
@@ -273,6 +276,9 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
+  if (!rawText || rawText.trim().length < 20) {
+    throw new Error('Could not extract text from this file. If it\'s a scanned PDF or image-based document, try copying the text into a .txt file first.');
+  }
   const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
