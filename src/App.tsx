@@ -273,11 +273,11 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
-  const response = await fetch('https://claudly-proxy.vercel.app/api/enrich'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rawText, category, fileName }),
-  });
+  const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ rawText, category, fileName }),
+});
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(err.error || `API error ${response.status}`);
