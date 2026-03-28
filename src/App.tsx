@@ -273,7 +273,7 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
-  const response = await fetch('/api/enrich', {
+  const response = await fetch('https://claudly-proxy.vercel.app/api/enrich'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rawText, category, fileName }),
