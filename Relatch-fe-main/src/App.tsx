@@ -280,10 +280,10 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
     throw new Error('Could not extract text from this file. If it\'s a scanned PDF or image-based document, try copying the text into a .txt file first.');
   }
   const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ rawText, category, fileName }),
-});
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rawText, category, fileName }),
+  });
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(err.error || `API error ${response.status}`);
