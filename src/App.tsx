@@ -289,7 +289,6 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
 
 async function parseFile(file: File): Promise<UploadedFile> {
   const traceId = `ingest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  });
   const precheck = validateInputFile(file);
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
   const type = detectFileType(file);
