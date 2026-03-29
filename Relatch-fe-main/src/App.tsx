@@ -317,7 +317,7 @@ Category: ${category}
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
   if (!rawText || rawText.trim().length < 20) {
-    throw new Error('Could not extract any text from this file. If it\'s a scanned or image-based PDF, copy the text into a .txt file first.');
+    return generateFallbackSkill(rawText || '', fileName, category);
   }
   try {
     const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
@@ -333,7 +333,6 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
     if (!data.enriched) throw new Error('Empty response from AI');
     return data.enriched;
   } catch {
-    // AI failed — use rule-based fallback so the file still gets processed
     return generateFallbackSkill(rawText, fileName, category);
   }
 }
@@ -359,12 +358,7 @@ async function parseFile(file: File): Promise<UploadedFile> {
     warnings: extracted.warnings,
   });
   const category = inferCategory(file, extracted.text);
-  let content: string;
-  try {
-    content = await enrichWithAI(extracted.text, category, file.name);
-  } catch (err) {
-    throw new Error(`AI enrichment failed for ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-  }
+  const content = await enrichWithAI(extracted.text, category, file.name);
   const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
   console.info(`[INGEST ${traceId}] success`, {
     outputLength: content.length,
