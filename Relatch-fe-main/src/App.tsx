@@ -123,14 +123,17 @@ function validateInputFile(file: File): FileValidationResult {
   return { ok: true };
 }
 
-function isLikelyAppAssetText(text: string): boolean {
+function isLikelyAppAssetText(text: string, fileType: NormalizedFileType): boolean {
+  // Only run this check on text/unknown files — not on PDF/DOCX
+  // PDFs about web dev, coding guides, or HTML docs would be falsely rejected
+  if (fileType === 'pdf' || fileType === 'docx') return false;
   const sample = text.substring(0, 1200).toLowerCase();
   return (
     sample.includes('<!doctype html') ||
     sample.includes('<script type="module"') ||
     sample.includes('__vite__') ||
     sample.includes('webpack') ||
-    sample.includes('sourceMappingURL'.toLowerCase()) ||
+    sample.includes('sourcemappingurl') ||
     sample.includes('/assets/index-')
   );
 }
@@ -208,10 +211,14 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = (content.items as { str?: string }[])
-        .map((item) => item.str || '')
-        .join(' ');
-      fullText += `\n${pageText}`;
+      const pageText = (content.items as { str?: string; hasEOL?: boolean }[])
+  .map((item) => {
+    const str = item.str || '';
+    // hasEOL is pdfjs's signal that this item ends a line
+    return item.hasEOL ? str + '\n' : str + ' ';
+  })
+  .join('');
+fullText += `\n${pageText}`;
     }
     return { type: 'pdf', text: fullText, warnings };
   } catch {
@@ -428,9 +435,22 @@ async function parseFile(file: File): Promise<UploadedFile> {
   if (type === 'pdf' && !(file.type || '').toLowerCase().includes('pdf') && getFileExtension(file.name) !== '.pdf') {
     throw new Error('File is not a valid PDF MIME/extension for PDF pipeline.');
   }
-  if ((type === 'pdf' || type === 'docx' || type === 'txt') && isLikelyAppAssetText(extracted.text)) {
+ if (type === 'txt' && isLikelyAppAssetText(extracted.text, type)) {
     throw new Error('Detected app HTML/JS bundle content instead of a user document.');
   }
+  // If PDF extracted nothing — likely scanned/image-based
+if (type === 'pdf' && extracted.text.trim().length < 50) {
+  return {
+    id: generateId(),
+    name: file.name,
+    type: file.type || type,
+    size: file.size,
+    content: generateFallbackSkill('', file.name, 'knowledge'),
+    category: 'knowledge',
+    parsedAt: new Date(),
+    extractionWarning: 'This PDF appears to be image-based or scanned. Text could not be extracted. A structural template was generated instead — consider uploading a text-based version for better results.',
+  };
+}
   console.info(`[INGEST ${traceId}] extracted_preview`, {
     preview: extracted.text.substring(0, 500),
     extractedLength: extracted.text.length,
