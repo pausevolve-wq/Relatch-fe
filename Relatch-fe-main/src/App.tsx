@@ -275,22 +275,67 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
   return { type: 'unknown', text: raw, warnings: [] };
 }
 
+function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
+  const name = fileName.replace(/\.[^/.]+$/, '');
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const keyPoints = lines.filter(l => l.length > 20 && l.length < 300).slice(0, 12);
+  const headings = lines.filter(l => l.length < 80 && l === l.trim() && !/^[-•*]/.test(l)).slice(0, 6);
+
+  return `---
+domain: ${category}
+content_type: reference
+use_cases: [custom skill, claude assistant, personal data]
+---
+
+## Instructions
+Use the knowledge and context from this skill file to provide accurate, relevant responses.
+Follow the structure and tone implied by the source material.
+
+## When to Use
+Activate this skill when the user asks about topics related to ${name}.
+Reference this content when providing answers in this domain.
+
+## Knowledge
+${keyPoints.map(p => `- ${p}`).join('\n') || `- Source: ${name}`}
+
+## Key Concepts
+${headings.map(h => `- ${h}`).join('\n') || `- ${name}`}
+
+## How to Respond
+Be concise and accurate. Draw from the knowledge above.
+Match the tone and style of the source material.
+
+## Output Style
+Clear and structured. Use bullet points for lists.
+Keep responses focused and relevant.
+
+## Extended Content
+This skill was generated from: ${fileName}
+Category: ${category}
+`;
+}
+
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
   if (!rawText || rawText.trim().length < 20) {
-    throw new Error('Could not extract text from this file. If it\'s a scanned PDF or image-based document, try copying the text into a .txt file first.');
+    throw new Error('Could not extract any text from this file. If it\'s a scanned or image-based PDF, copy the text into a .txt file first.');
   }
-  const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rawText, category, fileName }),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `API error ${response.status}`);
+  try {
+    const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawText, category, fileName }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(err.error || `API error ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.enriched) throw new Error('Empty response from AI');
+    return data.enriched;
+  } catch {
+    // AI failed — use rule-based fallback so the file still gets processed
+    return generateFallbackSkill(rawText, fileName, category);
   }
-  const data = await response.json();
-  if (!data.enriched) throw new Error('No content returned from AI enrichment');
-  return data.enriched;
 }
 
 async function parseFile(file: File): Promise<UploadedFile> {
@@ -414,26 +459,26 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     setIsProcessing(true); setError(null);
-    const parsed: UploadedFile[] = [];
-    for (const file of Array.from(fileList)) {
-      console.info('[UPLOAD] received_file', {
-        name: file.name,
-        type: file.type || 'unknown',
-        size: file.size,
-        lastModified: file.lastModified,
-      });
+    const allFiles = Array.from(fileList).filter(file => {
       const validation = validateInputFile(file);
       if (!validation.ok) {
-        setError(`Rejected ${file.name}: ${validation.reason}`);
-        continue;
+        setError(`Skipped ${file.name}: ${validation.reason}`);
+        return false;
       }
-      try {
-        parsed.push(await parseFile(file));
-      } catch (err) {
-        setError(`Failed to parse ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      return true;
+    });
+    const results = await Promise.allSettled(allFiles.map(file => parseFile(file)));
+    const parsed: UploadedFile[] = [];
+    const errors: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        parsed.push(result.value);
+      } else {
+        errors.push(`${allFiles[i].name}: ${result.reason instanceof Error ? result.reason.message : 'Unknown error'}`);
       }
-    }
+    });
     if (parsed.length > 0) onFilesAdded(parsed);
+    if (errors.length > 0) setError(errors.join(' | '));
     setIsProcessing(false);
   }, [onFilesAdded]);
 
@@ -1170,7 +1215,7 @@ export default function App() {
                   { icon: <FileText className="w-3.5 h-3.5" />, label: 'PDF, TXT, MD' },
                   { icon: <FolderKanban className="w-3.5 h-3.5" />, label: 'JSON, YAML, CSV' },
                   { icon: <Upload className="w-3.5 h-3.5" />, label: 'HTML, XML' },
-                  { icon: <Sparkles className="w-3.5 h-3.5" />, label: 'Code, Images' },
+                  { icon: <Code className="w-3.5 h-3.5" />, label: 'JS, TS, PY' },
                 ].map(item => (
                   <div key={item.label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.025] border border-white/[0.05] text-xs text-gray-400">
                     <span className="text-blue-400">{item.icon}</span>{item.label}
