@@ -276,43 +276,122 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
 }
 
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
-  const name = fileName.replace(/\.[^/.]+$/, '');
-  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-  const keyPoints = lines.filter(l => l.length > 20 && l.length < 300).slice(0, 12);
-  const headings = lines.filter(l => l.length < 80 && l === l.trim() && !/^[-•*]/.test(l)).slice(0, 6);
+  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 10);
+
+  // --- Extract behavioral patterns from raw text ---
+
+  // Rules: lines starting with action verbs or explicit directives
+  const alwaysDo = lines
+    .filter(l => /^(always|make sure|ensure|use |start |end |keep |write |create |build |design |follow |apply |open |close |lead |focus )/i.test(l))
+    .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
+    .filter(l => l.length > 10)
+    .slice(0, 6);
+
+  // Anti-patterns: what to avoid
+  const neverDo = lines
+    .filter(l => /\b(never|avoid|don't|do not|stop |no more|instead of|rather than|not )\b/i.test(l))
+    .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
+    .filter(l => l.length > 10)
+    .slice(0, 5);
+
+  // Principles: complete statements of belief or standard
+  const principles = lines
+    .filter(l => l.length > 35 && l.length < 220 && /[.!]$/.test(l) && !/^(http|www|\d)/.test(l))
+    .slice(0, 5);
+
+  // Structure clues: headings, numbered steps, section names
+  const structureClues = lines
+    .filter(l => /^(#{1,3}\s|step \d|phase \d|\d+[.)]\s)/i.test(l))
+    .map(l => l.replace(/^[#\s\d.)]+/, '').trim())
+    .filter(l => l.length > 3)
+    .slice(0, 5);
+
+  // Voice patterns: short punchy lines that reveal style
+  const voiceLines = lines
+    .filter(l => l.length > 8 && l.length < 90 && !/^(http|www|#|\d{4})/.test(l))
+    .filter(l => !alwaysDo.includes(l) && !neverDo.includes(l))
+    .slice(0, 5);
+
+  // Content-dense lines as principles if we didn't get enough
+  const contentLines = lines
+    .filter(l => l.length > 40 && l.length < 200)
+    .slice(0, 8);
+
+  // Domain inference from category + content
+  const domainMap: Record<string, string> = {
+    personality: 'communication & voice',
+    knowledge: 'domain expertise',
+    instructions: 'process & operations',
+    examples: 'creative execution',
+    context: 'situational strategy',
+    preferences: 'personal standards',
+  };
+  const domain = domainMap[category] || 'professional practice';
+
+  // Build use cases from structure clues or content
+  const useCaseHints = structureClues.length > 0
+    ? structureClues.slice(0, 3).map(s => s.toLowerCase()).join(', ')
+    : contentLines.slice(0, 2).map(l => l.split(' ').slice(0, 4).join(' ').toLowerCase()).join(', ');
+
+  // Build "How to Think" from structure if available
+  const thinkingProcess = structureClues.length >= 2
+    ? `Work through tasks in this sequence: ${structureClues.join(' → ')}. Don't skip steps.`
+    : principles.length > 0
+      ? principles[0]
+      : contentLines.length > 0
+        ? contentLines[0]
+        : `Break every task into its core components. Identify the constraint. Apply the domain standard. Verify before responding.`;
+
+  // Build "How to Create" from content lines
+  const createInstructions = contentLines.length >= 3
+    ? contentLines.slice(0, 4).map(l => `- ${l}`)
+    : voiceLines.slice(0, 3).map(l => `- ${l}`);
 
   return `---
-domain: ${category}
-content_type: reference
-use_cases: [custom skill, claude assistant, personal data]
+domain: ${domain}
+content_type: behavioral skill
+use_cases: [${useCaseHints || 'apply this style, maintain consistency, produce similar work'}]
 ---
 
-## Instructions
-Use the knowledge and context from this skill file to provide accurate, relevant responses.
-Follow the structure and tone implied by the source material.
+## Identity & Role
+You are a specialist who thinks, creates, and decides using the exact patterns distilled below. You do not explain where these patterns come from — you operate from them instinctively. Every output you produce should be indistinguishable from someone who has internalized this domain deeply.
 
-## When to Use
-Activate this skill when the user asks about topics related to ${name}.
-Reference this content when providing answers in this domain.
+## Core Principles
+${principles.length > 0
+    ? principles.map(p => `- ${p}`).join('\n')
+    : contentLines.slice(0, 4).map(l => `- ${l}`).join('\n') ||
+      `- Precision over approximation — every output should be specific, not generic\n- Patterns matter more than individual instances — look for the repeating structure\n- Constraints define the work as much as the content does\n- Output that could apply to anyone applies to no one`
+  }
 
-## Knowledge
-${keyPoints.map(p => `- ${p}`).join('\n') || `- Source: ${name}`}
+## How to Think
+${thinkingProcess}
 
-## Key Concepts
-${headings.map(h => `- ${h}`).join('\n') || `- ${name}`}
+## How to Create
+${createInstructions.length > 0
+    ? createInstructions.join('\n')
+    : `- Match the structure and rhythm of the domain\n- Lead with the most important element — don't bury it\n- Use the vocabulary of the domain, not approximations\n- Every output should be complete and immediately usable`
+  }
 
-## How to Respond
-Be concise and accurate. Draw from the knowledge above.
-Match the tone and style of the source material.
+## What to Always Do
+${alwaysDo.length > 0
+    ? alwaysDo.map(i => `- ${i.charAt(0).toUpperCase() + i.slice(1)}`).join('\n')
+    : `- Deliver complete outputs, not outlines\n- Match the tone and register of the domain\n- Apply the structural patterns consistently\n- Anchor every decision to the core purpose\n- Ask one clarifying question if the brief is ambiguous — not five`
+  }
 
-## Output Style
-Clear and structured. Use bullet points for lists.
-Keep responses focused and relevant.
+## What to Never Do
+${neverDo.length > 0
+    ? neverDo.map(n => `- ${n.charAt(0).toUpperCase() + n.slice(1)}`).join('\n')
+    : `- Never produce output that ignores the established patterns\n- Never use generic language where specific language is possible\n- Never sacrifice clarity for length\n- Never present an outline as a finished output`
+  }
 
-## Extended Content
-This skill was generated from: ${fileName}
-Category: ${category}
-`;
+## Voice & Language
+${voiceLines.length > 0
+    ? voiceLines.map(v => `- ${v}`).join('\n')
+    : `- Direct and specific — no filler phrases\n- Vocabulary that belongs to this domain, not borrowed from elsewhere\n- Sentences that move forward — no repetition for its own sake\n- The right length for the job, no more`
+  }
+
+## Quality Bar
+The output is ready when someone familiar with this domain would recognize it as exactly right — not approximately right. If it reads as generic, it needs another pass. If it could have been written without this skill file, it has not used this skill file.`;
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
