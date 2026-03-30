@@ -1321,7 +1321,7 @@ export default function App() {
   <img
     src="/logo.png"
     alt="Relatch Logo"
-    className="w-10 h-10 object-contain translate-x-[1px]"
+    className="w-9 h-9 object-contain translate-x-[1px]"
   />
   <div>
     <h1 className="text-sm font-bold text-white tracking-tight leading-none">
