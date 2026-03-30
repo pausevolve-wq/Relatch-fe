@@ -725,8 +725,11 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
             <div className={`w-14 h-14 mx-auto mb-5 rounded-2xl flex items-center justify-center transition-all duration-500 ${isDragging ? 'bg-blue-500/20 scale-110 rotate-6' : 'bg-white/[0.04] border border-white/[0.06] group-hover:bg-white/[0.06]'}`}>
               <Upload className={`w-6 h-6 transition-all duration-300 ${isDragging ? 'text-blue-400' : 'text-gray-500 group-hover:text-gray-300'}`} />
             </div>
-            <h3 className="text-base font-semibold text-white mb-1.5">{isProcessing ? 'Processing...' : isDragging ? 'Drop to upload' : 'Drop files or click to browse'}</h3>
-            <p className="text-sm text-gray-500 mb-5">Drop your docs, notes, or examples - Turn your data into structured skill files instantly</p>
+            <h3 className="text-base font-semibold text-white mb-1.5">{isProcessing ? 'Reading your files...' : isDragging ? 'Drop to upload' : 'Drop your files to get started'}</h3>
+            <p className="text-sm text-gray-400 mb-2">
+              Train claude to behave excatly the way you want
+            </p>
+            <p className="text-sm text-gray-500 mb-5">Brand guidelines, meeting notes, writing samples, style docs — anything that shows how you want claude to behave</p>
             <div className="flex flex-wrap justify-center gap-2">
               {Object.entries(ACCEPTED_TYPES).map(([label, exts]) => (
                 <span key={label} className="px-2.5 py-1 text-[11px] rounded-lg bg-white/[0.03] text-gray-500 border border-white/[0.05] font-medium">
@@ -739,15 +742,15 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
               onClick={(e) => { e.stopPropagation(); onSampleLoad(); }}
               className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline underline-offset-4"
             >
-              Try a sample file
+              See it in action with a sample file →
             </button>
           </div>
           {isProcessing && (
             <div className="absolute inset-0 rounded-2xl bg-[#050a12]/90 flex items-center justify-center backdrop-blur-sm">
               <div className="flex flex-col items-center gap-3 text-blue-400">
                 <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm font-medium">Parsing files...</span>
-                <span className="text-xs text-gray-500">PDFs may take a moment if OCR is needed</span>
+                <span className="text-sm font-medium">Reading your files...</span>
+                <span className="text-xs text-gray-500">Complex PDFs may take a few extra seconds</span>
               </div>
             </div>
           )}
@@ -915,13 +918,13 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><Sparkles className="w-4 h-4 text-blue-400" /></div>
-            <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">This becomes the filename - keep it short and descriptive</p></div>
+            <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">Give your skill a name — this is how Claude will remember it</p></div>
           </div>
           <div className="grid grid-cols-1 gap-4">
             <div className="md:col-span-2">
               <label className="block text-xs font-medium text-gray-400 mb-1.5">Skill Name <span className="text-red-400">*</span></label>
               <input type="text" value={config.skillName} onChange={(e) => updateField('skillName', e.target.value)} placeholder="e.g., My Personal Assistant" className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all text-sm outline-none" />
-              <p className="mt-2 text-[11px] text-gray-500">This becomes your skill&apos;s filename - e.g., my-copywriting-skill.md</p>
+              <p className="mt-2 text-[11px] text-gray-500">Your skill will be saved as a .md file — drop it straight into Claude Projects</p>
               {isValidName && (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-[11px] text-gray-500">Filename:</span>
@@ -944,17 +947,17 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-violet-400" /></div>
-            <div><h3 className="text-sm font-semibold text-white">Anything else Claude should know?</h3><p className="text-[11px] text-gray-500">Add rules, preferences, or context you did not upload as a file</p></div>
+            <div><h3 className="text-sm font-semibold text-white">Anything Claude should always remember?</h3><p className="text-[11px] text-gray-500">Rules, quirks, preferences you didn't upload — type them here directly</p></div>
           </div>
-          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={"Add any additional context, rules, or notes you want Claude to follow...\n\nExamples:\n• Always respond in a casual, friendly tone\n• Use bullet points for lists\n• When I ask about code, prefer TypeScript\n• Reference my company name 'Acme Corp' in formal docs"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
-          <p className="mt-2 text-[11px] text-gray-600">These notes will be placed as high-priority custom instructions at the top of the generated skill file.</p>
+          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={"Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Always write in a direct, casual tone — no corporate fluff\n• I work in TypeScript, always default to that\n• My company is called Acme — never say \"your company\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
+          <p className="mt-2 text-[11px] text-gray-600">These go at the top of your skill file as the highest-priority instructions.</p>
         </div>
       </AnimatedSection>
 
       <AnimatedSection delay={200}>
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
-          <h3 className="text-sm font-semibold text-white mb-1">Category Settings</h3>
-          <p className="text-[11px] text-gray-500 mb-5">Toggle sections and choose how strongly Claude should use each one</p>
+          <h3 className="text-sm font-semibold text-white mb-1">What goes into your skill</h3>
+          <p className="text-[11px] text-gray-500 mb-5">Only include what's relevant. You can always add more later.</p>
           <div className="space-y-2">
             {(Object.entries(config.categories) as [FileCategory, CategoryConfig][]).map(([key, cat], idx) => {
               const meta = CATEGORY_META[key];
@@ -1003,8 +1006,8 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
 
   const LOADING_MESSAGES = [
-    'Creating your skill file...',
-    'Adding final touches to your skill file...',
+    'Building your skill file...',
+    'Almost there — structuring the final sections...',
   ];
 
   useEffect(() => {
@@ -1139,17 +1142,17 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       {!isGenerating && generatedFiles && (<>
       <AnimatedSection>
         <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <h4 className="text-sm font-semibold text-white mb-1">Try the full Relatch app</h4>
-          <p className="text-[11px] text-gray-500 mb-3">Like this? Join the waitlist for early access to the full experience.</p>
+          <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
+          <p className="text-[11px] text-gray-500 mb-3">The full Relatch app connects directly to Claude — no files, no drag & drop. Join the waitlist for early access.</p>
           {waitlistSuccess ? (
-            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">Thanks, you&apos;re on the waitlist. We&apos;ll reach out soon.</div>
+            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
           ) : (
             <form onSubmit={handleWaitlistSubmit} className="space-y-2.5">
               <div className="flex gap-2">
                 <input type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} placeholder="you@company.com" className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none" />
                 <button type="submit" disabled={waitlistSubmitting} className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>{waitlistSubmitting ? 'Joining...' : 'Join waitlist'}</button>
               </div>
-              <p className="text-[11px] text-gray-500">We&apos;ll only email product updates and early access.</p>
+              <p className="text-[11px] text-gray-500">One email when we launch. That&apos;s it.</p>
               {waitlistError && <p className="text-[11px] text-red-300">{waitlistError}</p>}
             </form>
           )}
@@ -1160,8 +1163,11 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           <div className="flex items-start gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
             <div>
-              <h3 className="text-base font-semibold text-white">Your skill is ready</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Your Claude-optimized <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> skill file is ready to drag & drop into Claude</p>
+              <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
+              <p className="text-sm text-gray-400 mt-2">
+                No more rewriting prompts — Claude will follow your rules every time.
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
             </div>
           </div>
           <div className="flex items-center gap-5">
@@ -1177,7 +1183,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       </AnimatedSection>
       <AnimatedSection delay={120}>
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <h4 className="text-sm font-medium text-white mb-2">What&apos;s inside</h4>
+          <h4 className="text-sm font-medium text-white mb-2">Included in this file</h4>
           <div className="flex flex-wrap gap-2">
             {sectionSummary.map((item) => (<span key={item.category} className="px-2.5 py-1 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-gray-300">{item.count} {item.label.toLowerCase()}</span>))}
           </div>
@@ -1218,7 +1224,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Package className="w-4 h-4 text-gray-400" />
-              <div><h4 className="text-sm font-medium text-white">Paste into Claude directly</h4><p className="text-[11px] text-gray-500">Use this if you want to paste into Claude&apos;s Custom Instructions box instead of uploading a file.</p></div>
+              <div><h4 className="text-sm font-medium text-white">Paste into Claude instead</h4><p className="text-[11px] text-gray-500">Skip the file upload — copy everything and paste directly into Claude&apos;s Custom Instructions.</p></div>
             </div>
             <button onClick={() => handleCopy(singleFile, 'single-file')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all active:scale-[0.97] ${copied === 'single-file' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-white/[0.05] text-gray-300 border border-white/[0.08] hover:bg-white/[0.08]'}`}>
               {copied === 'single-file' ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy All</>}
@@ -1231,9 +1237,9 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           <div className="flex items-start gap-2.5">
             <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-xs font-medium text-blue-300 mb-1">Claude-Optimized Format</p>
+              <p className="text-xs font-medium text-blue-300 mb-1">Built for Claude&apos;s skill system</p>
               <p className="text-[11px] text-gray-400 leading-relaxed">
-                This file includes proper YAML frontmatter, lowercase-hyphenated naming (<code className="text-blue-400 bg-blue-500/10 px-1 rounded font-mono">{generatedFiles[0]?.filename}</code>), structured sections with directives, and priority ordering — all optimized for Claude's skill parsing.
+                Includes YAML frontmatter, structured sections, and priority ordering — the exact format Claude&apos;s skill parser expects. Drop it in and it works.
               </p>
             </div>
           </div>
@@ -1244,10 +1250,10 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           <h4 className="text-sm font-semibold text-white mb-3">How to use with Claude</h4>
           <div className="space-y-2.5">
             {[
-              { step: '1', text: 'Download the generated .md file(s) above' },
-              { step: '2', text: 'Open claude.ai and go to your Project settings' },
-              { step: '3', text: 'Drag & drop the .md file into Project Knowledge or paste into Custom Instructions' },
-              { step: '4', text: 'Start chatting - Claude will now use your personalized skill!' },
+              { step: '1', text: 'Download your skill file above' },
+              { step: '2', text: 'Open claude.ai → go to any Project → Settings' },
+              { step: '3', text: 'Drag your .md file into Project Knowledge — or paste into Custom Instructions' },
+              { step: '4', text: 'Start a new chat. Claude now works exactly like you do.' },
             ].map(item => (
               <div key={item.step} className="flex items-start gap-2.5">
                 <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
@@ -1313,10 +1319,10 @@ export default function App() {
           <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/15"><Zap className="w-4 h-4 text-white" /></div>
-              <div><h1 className="text-sm font-bold text-white tracking-tight leading-none">Relatch</h1><p className="text-[10px] text-gray-500 leading-none mt-0.5">Relatch your data to Claude</p></div>
+              <div><h1 className="text-sm font-bold text-white tracking-tight leading-none">Relatch</h1><p className="text-[10px] text-gray-500 leading-none mt-0.5">Make Claude work like you</p></div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]"><Shield className="w-3 h-3 text-emerald-400" /><span className="text-[10px] text-gray-400 font-medium">Your files never leave your browser</span></div>
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]"><Shield className="w-3 h-3 text-emerald-400" /><span className="text-[10px] text-gray-400 font-medium">Files processed locally — never uploaded</span></div>
             </div>
           </div>
         </header>
@@ -1324,16 +1330,16 @@ export default function App() {
           <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
             <AnimatedSection>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/[0.08] border border-blue-500/15 text-blue-400 text-[11px] font-medium mb-5">
-                <Sparkles className="w-3 h-3" />No GitHub. No code. Just your data.
+                <Sparkles className="w-3 h-3" />Your files. Your rules. Claude follows both.
               </div>
             </AnimatedSection>
             <AnimatedSection delay={100}>
               <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
-                Build Claude Skills<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">From Your Own Data</span>
+                Turn Your Work Into<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Claude&apos;s Memory</span>
               </h2>
             </AnimatedSection>
             <AnimatedSection delay={200}>
-              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Upload your files, organize them into categories, and generate perfectly structured Claude skill files — ready to drag & drop.</p>
+              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Drop any document — notes, guidelines, examples, PDFs — and get a structured skill file that makes Claude work exactly like you do. Ready in under a minute.</p>
             </AnimatedSection>
             <AnimatedSection delay={300}>
               <div className="flex flex-wrap justify-center gap-3 mb-10">
@@ -1388,7 +1394,7 @@ export default function App() {
         </div>
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-            <p className="text-[11px] text-gray-600">Your files stay on your device - nothing is uploaded to any server</p>
+            <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
             <p className="text-[11px] text-gray-700">Relatch v1.1</p>
           </div>
         </footer>
