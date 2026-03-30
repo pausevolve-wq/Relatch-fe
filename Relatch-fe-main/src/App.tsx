@@ -1318,9 +1318,20 @@ export default function App() {
         <header className="border-b border-white/[0.05]">
           <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/15"><Zap className="w-4 h-4 text-white" /></div>
-              <div><h1 className="text-sm font-bold text-white tracking-tight leading-none">Relatch</h1><p className="text-[10px] text-gray-500 leading-none mt-0.5">Make Claude work like you</p></div>
-            </div>
+  <img
+    src="/logo.png"
+    alt="Relatch Logo"
+    className="w-8 h-8 object-contain p-1"
+  />
+  <div>
+    <h1 className="text-sm font-bold text-white tracking-tight leading-none">
+      Relatch
+    </h1>
+    <p className="text-[10px] text-gray-500 leading-none mt-0.5">
+      Make Claude work like you
+    </p>
+  </div>
+</div>
             <div className="flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]"><Shield className="w-3 h-3 text-emerald-400" /><span className="text-[10px] text-gray-400 font-medium">Files processed locally — never uploaded</span></div>
             </div>
