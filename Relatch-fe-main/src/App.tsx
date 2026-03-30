@@ -1317,11 +1317,11 @@ export default function App() {
       <div className="relative z-10">
         <header className="border-b border-white/[0.05]">
           <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+           <div className="flex items-center gap-2">
   <img
     src="/logo.png"
     alt="Relatch Logo"
-    className="w-8 h-8 object-contain p-1"
+    className="w-10 h-10 object-contain translate-x-[1px]"
   />
   <div>
     <h1 className="text-sm font-bold text-white tracking-tight leading-none">
