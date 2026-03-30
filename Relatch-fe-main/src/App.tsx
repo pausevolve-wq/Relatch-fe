@@ -1164,7 +1164,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
             <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
             <div>
               <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
-              <p className="text-sm text-gray-400 mt-2">
+              <p className="text-sm text-gray-400 mt-0.5">
                 No more rewriting prompts — Claude will follow your rules every time.
               </p>
               <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
@@ -1339,7 +1339,7 @@ export default function App() {
               </h2>
             </AnimatedSection>
             <AnimatedSection delay={200}>
-              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Drop any document — notes, guidelines, examples, PDFs — and get a structured skill file that makes Claude work exactly like you do. Ready in under a minute.</p>
+              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Drop any document — notes, guidelines, examples, PDFs and get a structured skill file that makes Claude work exactly like you do. Ready in under a minute.</p>
             </AnimatedSection>
             <AnimatedSection delay={300}>
               <div className="flex flex-wrap justify-center gap-3 mb-10">
