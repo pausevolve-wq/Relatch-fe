@@ -42,8 +42,6 @@ interface GeneratedSkill {
   tokenEstimate: number;
 }
 
-// ─── ICONS (inline SVGs to remove lucide dependency issues) ──────────
-// Using lucide-react icons
 import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
   ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
@@ -63,6 +61,9 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
   'Data': ['.json', '.yaml', '.yml', '.toml'],
   'Code': ['.js', '.ts', '.py', '.rb', '.go', '.rs'],
 };
+
+const OCR_PROXY_URL = 'https://claudly-proxy.vercel.app/api/ocr';
+const ENRICH_PROXY_URL = 'https://claudly-proxy.vercel.app/api/enrich';
 
 function getFileExtension(name: string): string {
   return '.' + name.split('.').pop()?.toLowerCase();
@@ -92,7 +93,6 @@ interface FileValidationResult {
   ok: boolean;
   reason?: string;
 }
-
 
 function detectFileType(file: File): NormalizedFileType {
   const ext = getFileExtension(file.name);
@@ -124,8 +124,6 @@ function validateInputFile(file: File): FileValidationResult {
 }
 
 function isLikelyAppAssetText(text: string, fileType: NormalizedFileType): boolean {
-  // Only run this check on text/unknown files — not on PDF/DOCX
-  // PDFs about web dev, coding guides, or HTML docs would be falsely rejected
   if (fileType === 'pdf' || fileType === 'docx') return false;
   const sample = text.substring(0, 1200).toLowerCase();
   return (
@@ -171,6 +169,16 @@ function readAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   });
 }
 
+// Convert ArrayBuffer to base64 string for OCR API
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 function decodeArrayBuffer(buffer: ArrayBuffer, encoding: string = 'utf-8'): string {
   try {
     return new TextDecoder(encoding, { fatal: false }).decode(new Uint8Array(buffer));
@@ -182,6 +190,17 @@ function decodeArrayBuffer(buffer: ArrayBuffer, encoding: string = 'utf-8'): str
 function stripArtifacts(text: string): string {
   return text
     .replace(/%PDF-[\d.]+/g, ' ')
+    .replace(/<\/?[^>]+>/g, ' ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Clean XML artifacts specifically from DOCX fallback path
+function stripXmlArtifacts(text: string): string {
+  return text
+    .replace(/w:[a-zA-Z]+/g, ' ')
+    .replace(/xmlns:[a-zA-Z]+="[^"]*"/g, ' ')
     .replace(/<\/?[^>]+>/g, ' ')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
     .replace(/\s{2,}/g, ' ')
@@ -202,8 +221,47 @@ function extractTextFromHtml(html: string): string {
   return blocks.join('\n');
 }
 
+// ── OCR FALLBACK via backend proxy ───────────────────────────────────
+// Called when pdfjs extracts < 50 chars (scanned/image PDFs)
+// Sends base64 to claudly-proxy/api/ocr which tries OCR.space → Filestack
+async function callOcrProxy(file: File): Promise<{ text: string; source: string } | null> {
+  try {
+    const buffer = await readAsArrayBuffer(file);
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = file.type || 'application/pdf';
+
+    console.info(`[OCR] sending ${file.name} (${formatBytes(file.size)}) to OCR proxy`);
+
+    const response = await fetch(OCR_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64, mimeType, fileName: file.name }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.warn(`[OCR] proxy failed: ${response.status}`, err);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.text && data.text.length > 50) {
+      console.info(`[OCR] success via ${data.source}: ${data.text.length} chars`);
+      return { text: data.text, source: data.source };
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('[OCR] proxy threw:', err);
+    return null;
+  }
+}
+
 async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   const warnings: string[] = [];
+  let pdfjsText = '';
+
+  // Step 1: Try pdfjs (works for text-based PDFs, fast, no API call)
   try {
     const buffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -212,19 +270,37 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       const pageText = (content.items as { str?: string; hasEOL?: boolean }[])
-  .map((item) => {
-    const str = item.str || '';
-    // hasEOL is pdfjs's signal that this item ends a line
-    return item.hasEOL ? str + '\n' : str + ' ';
-  })
-  .join('');
-fullText += `\n${pageText}`;
+        .map((item) => {
+          const str = item.str || '';
+          return item.hasEOL ? str + '\n' : str + ' ';
+        })
+        .join('');
+      fullText += `\n${pageText}`;
     }
-    return { type: 'pdf', text: fullText, warnings };
+    pdfjsText = fullText.trim();
   } catch {
-    warnings.push('PDF parsing failed, using fallback.');
-    return { type: 'pdf', text: '', warnings };
+    warnings.push('PDF text layer extraction failed.');
   }
+
+  // Step 2: If pdfjs got enough text, use it directly
+  if (pdfjsText.length >= 50) {
+    return { type: 'pdf', text: pdfjsText, warnings };
+  }
+
+  // Step 3: pdfjs got nothing — likely scanned/image PDF → call OCR proxy
+  console.info(`[PDF] pdfjs extracted only ${pdfjsText.length} chars, trying OCR...`);
+  warnings.push('PDF text layer empty — attempting OCR extraction.');
+
+  const ocrResult = await callOcrProxy(file);
+
+  if (ocrResult) {
+    warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents.`);
+    return { type: 'pdf', text: ocrResult.text, warnings };
+  }
+
+  // Step 4: Both failed
+  warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
+  return { type: 'pdf', text: '', warnings };
 }
 
 async function extractDocxText(file: File): Promise<ExtractedTextResult> {
@@ -256,14 +332,25 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     warnings.push('DOCX parser failed; using plain-text fallback.');
     try {
       const fallbackBuffer = await readAsArrayBuffer(file);
-      const fallback = stripArtifacts(decodeArrayBuffer(fallbackBuffer, 'latin1'));
-      return { type: 'docx', text: fallback, warnings };
+      // Use stripXmlArtifacts instead of stripArtifacts for binary DOCX fallback
+      const fallback = stripXmlArtifacts(decodeArrayBuffer(fallbackBuffer, 'latin1'));
+      if (fallback.length > 50) return { type: 'docx', text: fallback, warnings };
     } catch {
-      return { type: 'docx', text: '', warnings };
+      // ignore
     }
+
+    // DOCX fallback also failed — try OCR
+    console.info('[DOCX] binary fallback failed, trying OCR...');
+    warnings.push('DOCX extraction failed — attempting OCR.');
+    const ocrResult = await callOcrProxy(file);
+    if (ocrResult) {
+      warnings.push(`Text extracted via OCR (${ocrResult.source}).`);
+      return { type: 'docx', text: ocrResult.text, warnings };
+    }
+    return { type: 'docx', text: '', warnings };
   }
   const fallbackBuffer = await readAsArrayBuffer(file);
-  const fallback = stripArtifacts(decodeArrayBuffer(fallbackBuffer, 'latin1'));
+  const fallback = stripXmlArtifacts(decodeArrayBuffer(fallbackBuffer, 'latin1'));
   return { type: 'docx', text: fallback, warnings };
 }
 
@@ -285,46 +372,37 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
   const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 10);
 
-  // --- Extract behavioral patterns from raw text ---
-
-  // Rules: lines starting with action verbs or explicit directives
   const alwaysDo = lines
     .filter(l => /^(always|make sure|ensure|use |start |end |keep |write |create |build |design |follow |apply |open |close |lead |focus )/i.test(l))
     .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
     .filter(l => l.length > 10)
     .slice(0, 6);
 
-  // Anti-patterns: what to avoid
   const neverDo = lines
     .filter(l => /\b(never|avoid|don't|do not|stop |no more|instead of|rather than|not )\b/i.test(l))
     .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
     .filter(l => l.length > 10)
     .slice(0, 5);
 
-  // Principles: complete statements of belief or standard
   const principles = lines
     .filter(l => l.length > 35 && l.length < 220 && /[.!]$/.test(l) && !/^(http|www|\d)/.test(l))
     .slice(0, 5);
 
-  // Structure clues: headings, numbered steps, section names
   const structureClues = lines
     .filter(l => /^(#{1,3}\s|step \d|phase \d|\d+[.)]\s)/i.test(l))
     .map(l => l.replace(/^[#\s\d.)]+/, '').trim())
     .filter(l => l.length > 3)
     .slice(0, 5);
 
-  // Voice patterns: short punchy lines that reveal style
   const voiceLines = lines
     .filter(l => l.length > 8 && l.length < 90 && !/^(http|www|#|\d{4})/.test(l))
     .filter(l => !alwaysDo.includes(l) && !neverDo.includes(l))
     .slice(0, 5);
 
-  // Content-dense lines as principles if we didn't get enough
   const contentLines = lines
     .filter(l => l.length > 40 && l.length < 200)
     .slice(0, 8);
 
-  // Domain inference from category + content
   const domainMap: Record<string, string> = {
     personality: 'communication & voice',
     knowledge: 'domain expertise',
@@ -335,12 +413,10 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
   };
   const domain = domainMap[category] || 'professional practice';
 
-  // Build use cases from structure clues or content
   const useCaseHints = structureClues.length > 0
     ? structureClues.slice(0, 3).map(s => s.toLowerCase()).join(', ')
     : contentLines.slice(0, 2).map(l => l.split(' ').slice(0, 4).join(' ').toLowerCase()).join(', ');
 
-  // Build "How to Think" from structure if available
   const thinkingProcess = structureClues.length >= 2
     ? `Work through tasks in this sequence: ${structureClues.join(' → ')}. Don't skip steps.`
     : principles.length > 0
@@ -349,7 +425,6 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
         ? contentLines[0]
         : `Break every task into its core components. Identify the constraint. Apply the domain standard. Verify before responding.`;
 
-  // Build "How to Create" from content lines
   const createInstructions = contentLines.length >= 3
     ? contentLines.slice(0, 4).map(l => `- ${l}`)
     : voiceLines.slice(0, 3).map(l => `- ${l}`);
@@ -402,23 +477,52 @@ The output is ready when someone familiar with this domain would recognize it as
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
+  // Don't even attempt API call if text is too short
   if (!rawText || rawText.trim().length < 20) {
+    console.warn(`[enrichWithAI] text too short (${rawText?.trim().length || 0} chars), using fallback`);
     return generateFallbackSkill(rawText || '', fileName, category);
   }
+
   try {
-    const response = await fetch('https://claudly-proxy.vercel.app/api/enrich', {
+    const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rawText, category, fileName }),
     });
+
+    // Handle structured errors from backend
+    if (response.status === 422) {
+      const err = await response.json().catch(() => ({}));
+      if (err.error === 'INSUFFICIENT_SIGNAL') {
+        console.warn(`[enrichWithAI] INSUFFICIENT_SIGNAL for ${fileName}`);
+        // Still run rule-based fallback — better than nothing
+        return generateFallbackSkill(rawText, fileName, category);
+      }
+    }
+
+    if (response.status === 503) {
+      const err = await response.json().catch(() => ({}));
+      console.warn(`[enrichWithAI] AI_FAILED for ${fileName}:`, err.message);
+      return generateFallbackSkill(rawText, fileName, category);
+    }
+
     if (!response.ok) {
       const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error(`[enrichWithAI] API error ${response.status}:`, err);
       throw new Error(err.error || `API error ${response.status}`);
     }
+
     const data = await response.json();
-    if (!data.enriched) throw new Error('Empty response from AI');
+    if (!data.enriched) {
+      console.warn('[enrichWithAI] empty enriched response, using fallback');
+      return generateFallbackSkill(rawText, fileName, category);
+    }
+
+    console.info(`[enrichWithAI] success via ${data.model}: ${data.enriched.length} chars`);
     return data.enriched;
-  } catch {
+
+  } catch (err) {
+    console.error('[enrichWithAI] threw:', err);
     return generateFallbackSkill(rawText, fileName, category);
   }
 }
@@ -427,43 +531,53 @@ async function parseFile(file: File): Promise<UploadedFile> {
   const traceId = `ingest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const precheck = validateInputFile(file);
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
+
   const type = detectFileType(file);
-  console.info(`[INGEST ${traceId}] routed_type`, { routedType: type });
+  console.info(`[INGEST ${traceId}] routed_type`, { routedType: type, name: file.name });
+
   const extracted = await extractText(file, type);
-  const bufferSize = file.size;
-  if (bufferSize <= 0) throw new Error('Invalid buffer size (0 bytes).');
+
+  if (file.size <= 0) throw new Error('Invalid buffer size (0 bytes).');
+
   if (type === 'pdf' && !(file.type || '').toLowerCase().includes('pdf') && getFileExtension(file.name) !== '.pdf') {
     throw new Error('File is not a valid PDF MIME/extension for PDF pipeline.');
   }
- if (type === 'txt' && isLikelyAppAssetText(extracted.text, type)) {
+
+  if (type === 'txt' && isLikelyAppAssetText(extracted.text, type)) {
     throw new Error('Detected app HTML/JS bundle content instead of a user document.');
   }
-  // If PDF extracted nothing — likely scanned/image-based
-if (type === 'pdf' && extracted.text.trim().length < 50) {
+
+  // If extraction completely failed (empty text after OCR attempts)
+  // throw so the user sees a real error rather than a generic skill
+  if (extracted.text.trim().length < 20) {
+    const reason = extracted.warnings.length > 0
+      ? extracted.warnings[extracted.warnings.length - 1]
+      : 'Could not extract any text from this file.';
+    throw new Error(reason);
+  }
+
+  console.info(`[INGEST ${traceId}] extracted_preview`, {
+    extractedLength: extracted.text.length,
+    preview: extracted.text.substring(0, 300),
+    warnings: extracted.warnings,
+  });
+
+  const category = inferCategory(file, extracted.text);
+  const content = await enrichWithAI(extracted.text, category, file.name);
+  const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
+
+  console.info(`[INGEST ${traceId}] success`, { outputLength: content.length, category });
+
   return {
     id: generateId(),
     name: file.name,
     type: file.type || type,
     size: file.size,
-    content: generateFallbackSkill('', file.name, 'knowledge'),
-    category: 'knowledge',
-    parsedAt: new Date(),
-    extractionWarning: 'This PDF appears to be image-based or scanned. Text could not be extracted. A structural template was generated instead — consider uploading a text-based version for better results.',
-  };
-}
-  console.info(`[INGEST ${traceId}] extracted_preview`, {
-    preview: extracted.text.substring(0, 500),
-    extractedLength: extracted.text.length,
-    warnings: extracted.warnings,
-  });
-  const category = inferCategory(file, extracted.text);
-  const content = await enrichWithAI(extracted.text, category, file.name);
-  const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
-  console.info(`[INGEST ${traceId}] success`, {
-    outputLength: content.length,
+    content,
     category,
-  });
-  return { id: generateId(), name: file.name, type: file.type || type, size: file.size, content, category, parsedAt: new Date(), extractionWarning };
+    parsedAt: new Date(),
+    extractionWarning,
+  };
 }
 
 // ─── SKILL GENERATOR ────────────────────────────────────────────────
@@ -504,7 +618,6 @@ function toSkillSlug(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 60) || 'my-skill';
 }
 
-
 function makeSampleUploadedFile(): UploadedFile {
   const file = { name: SAMPLE_FILE_NAME } as File;
   return {
@@ -524,7 +637,7 @@ function getSkillSizeLabel(tokens: number): string {
   return 'Heavy skill';
 }
 
-// ─── ANIMATED SECTION (reveal on scroll) ─────────────────────────────
+// ─── ANIMATED SECTION ─────────────────────────────────────────────────
 
 function AnimatedSection({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -631,9 +744,10 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
           </div>
           {isProcessing && (
             <div className="absolute inset-0 rounded-2xl bg-[#050a12]/90 flex items-center justify-center backdrop-blur-sm">
-              <div className="flex items-center gap-3 text-blue-400">
+              <div className="flex flex-col items-center gap-3 text-blue-400">
                 <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                 <span className="text-sm font-medium">Parsing files...</span>
+                <span className="text-xs text-gray-500">PDFs may take a moment if OCR is needed</span>
               </div>
             </div>
           )}
@@ -728,11 +842,9 @@ function FileOrganizer({ files, onUpdateCategory }: { files: UploadedFile[]; onU
           ))}
         </div>
       </AnimatedSection>
-
       <AnimatedSection delay={80}>
         <p className="text-sm text-gray-500">Files are auto-categorized. Use the dropdown to reassign any file to a different category.</p>
       </AnimatedSection>
-
       <div className="space-y-3">
         {grouped.map(({ key, label, icon, color, desc, files: catFiles }, catIndex) => {
           const colors = colorMap[color];
@@ -743,8 +855,7 @@ function FileOrganizer({ files, onUpdateCategory }: { files: UploadedFile[]; onU
                   <span className={colors.text}>{icon}</span>
                   <div className="flex-1">
                     <h4 className="text-sm font-semibold text-white inline-flex items-center gap-1.5" title={CATEGORY_TOOLTIPS[key]}>
-                      {label}
-                      <span className="text-[10px] text-gray-600">?</span>
+                      {label}<span className="text-[10px] text-gray-600">?</span>
                     </h4>
                     <p className="text-[11px] text-gray-500">{desc}</p>
                   </div>
@@ -898,28 +1009,19 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
 
   useEffect(() => {
     if (!isGenerating) return;
-    const interval = setInterval(() => {
-      setLoadingMsgIndex(i => (i + 1) % LOADING_MESSAGES.length);
-    }, 2000);
+    const interval = setInterval(() => { setLoadingMsgIndex(i => (i + 1) % LOADING_MESSAGES.length); }, 2000);
     return () => clearInterval(interval);
   }, [isGenerating]);
 
   useEffect(() => {
     let cancelled = false;
     async function generate() {
-      setIsGenerating(true);
-      setGenerationError(null);
-      setLoadingMsgIndex(0);
+      setIsGenerating(true); setGenerationError(null); setLoadingMsgIndex(0);
       try {
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
           .filter(f => config.categories[f.category]?.enabled)
-          .map(f => ({
-            filename: `${slug}-${f.category}.md`,
-            content: f.content,
-            category: f.category,
-            tokenEstimate: estimateTokens(f.content),
-          }));
+          .map(f => ({ filename: `${slug}-${f.category}.md`, content: f.content, category: f.category, tokenEstimate: estimateTokens(f.content) }));
         if (!cancelled) setGeneratedFiles(results);
       } catch (err) {
         if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
@@ -934,13 +1036,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const singleFile = useMemo(() => generatedFiles ? generatedFiles.map(f => f.content).join('\n\n---\n\n') : '', [generatedFiles]);
   const totalTokens = generatedFiles ? generatedFiles.reduce((s, f) => s + f.tokenEstimate, 0) : 0;
   const sizeLabel = getSkillSizeLabel(totalTokens);
-  const sectionSummary = useMemo(() => {
-    return PRIORITY_ORDER.map((category) => ({
-      category,
-      label: config.categories[category].label,
-      count: files.filter((f) => config.categories[category]?.enabled && f.category === category).length,
-    })).filter((entry) => entry.count > 0);
-  }, [files, config]);
+  const sectionSummary = useMemo(() => PRIORITY_ORDER.map((category) => ({ category, label: config.categories[category].label, count: files.filter((f) => config.categories[category]?.enabled && f.category === category).length })).filter((entry) => entry.count > 0), [files, config]);
 
   const handleCopy = async (content: string, id: string) => {
     try { await navigator.clipboard.writeText(content); } catch {
@@ -967,52 +1063,26 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   };
 
   const handleWaitlistSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setWaitlistError(null);
-    if (!FORMSPREE_ENDPOINT) {
-      setWaitlistError('Waitlist is not configured yet. Add VITE_FORMSPREE_ENDPOINT in your .env file.');
-      return;
-    }
+    e.preventDefault(); setWaitlistError(null);
     const email = waitlistEmail.trim();
-    if (!email) {
-      setWaitlistError('Please enter your email.');
-      return;
-    }
-    if (!EMAIL_REGEX.test(email)) {
-      setWaitlistError('Please enter a valid email address.');
-      return;
-    }
+    if (!email) { setWaitlistError('Please enter your email.'); return; }
+    if (!EMAIL_REGEX.test(email)) { setWaitlistError('Please enter a valid email address.'); return; }
     try {
       setWaitlistSubmitting(true);
       const formBody = new URLSearchParams();
-      formBody.set('email', email);
-      formBody.set('source', 'relatch-step4');
+      formBody.set('email', email); formBody.set('source', 'relatch-step4');
       formBody.set('generatedFiles', (generatedFiles || []).map((file) => file.filename).join(', '));
       formBody.set('timestamp', new Date().toISOString());
-      const response = await fetch(FORMSPREE_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-        },
-        body: formBody.toString(),
-      });
-      if (!response.ok) {
-        throw new Error('Request failed');
-      }
-      setWaitlistSuccess(true);
-      setWaitlistEmail('');
-    } catch {
-      setWaitlistError('Could not submit right now. Please try again.');
-    } finally {
-      setWaitlistSubmitting(false);
-    }
+      const response = await fetch(FORMSPREE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
+      if (!response.ok) throw new Error('Request failed');
+      setWaitlistSuccess(true); setWaitlistEmail('');
+    } catch { setWaitlistError('Could not submit right now. Please try again.'); }
+    finally { setWaitlistSubmitting(false); }
   };
 
   const renderMarkdownPreview = (content: string) => {
     const lines = content.split('\n');
-    let inFrontmatter = false;
-    let frontmatterDone = false;
+    let inFrontmatter = false, frontmatterDone = false;
     const frontmatterLines: string[] = [];
     const bodyLines: { line: string; index: number }[] = [];
     for (let i = 0; i < lines.length; i++) {
@@ -1059,56 +1129,36 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       )}
-
       {generationError && (
         <AnimatedSection>
           <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/[0.08] border border-red-500/20 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span className="flex-1">{generationError}</span>
+            <AlertCircle className="w-4 h-4 shrink-0" /><span className="flex-1">{generationError}</span>
           </div>
         </AnimatedSection>
       )}
-
       {!isGenerating && generatedFiles && (<>
       <AnimatedSection>
         <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
           <h4 className="text-sm font-semibold text-white mb-1">Try the full Relatch app</h4>
           <p className="text-[11px] text-gray-500 mb-3">Like this? Join the waitlist for early access to the full experience.</p>
           {waitlistSuccess ? (
-            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">
-              Thanks, you&apos;re on the waitlist. We&apos;ll reach out soon.
-            </div>
+            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">Thanks, you&apos;re on the waitlist. We&apos;ll reach out soon.</div>
           ) : (
             <form onSubmit={handleWaitlistSubmit} className="space-y-2.5">
               <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={waitlistEmail}
-                  onChange={(e) => setWaitlistEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={waitlistSubmitting}
-                  className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
-                >
-                  {waitlistSubmitting ? 'Joining...' : 'Join waitlist'}
-                </button>
+                <input type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} placeholder="you@company.com" className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none" />
+                <button type="submit" disabled={waitlistSubmitting} className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>{waitlistSubmitting ? 'Joining...' : 'Join waitlist'}</button>
               </div>
               <p className="text-[11px] text-gray-500">We&apos;ll only email product updates and early access.</p>
-              {waitlistError && (
-                <p className="text-[11px] text-red-300">{waitlistError}</p>
-              )}
+              {waitlistError && <p className="text-[11px] text-red-300">{waitlistError}</p>}
             </form>
           )}
         </div>
       </AnimatedSection>
-
       <AnimatedSection>
-        <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15 animate-glow">
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15">
           <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0 animate-float"><Zap className="w-5 h-5 text-blue-400" /></div>
+            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
             <div>
               <h3 className="text-base font-semibold text-white">Your skill is ready</h3>
               <p className="text-xs text-gray-400 mt-0.5">Your Claude-optimized <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> skill file is ready to drag & drop into Claude</p>
@@ -1125,20 +1175,14 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
-
       <AnimatedSection delay={120}>
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
           <h4 className="text-sm font-medium text-white mb-2">What&apos;s inside</h4>
           <div className="flex flex-wrap gap-2">
-            {sectionSummary.map((item) => (
-              <span key={item.category} className="px-2.5 py-1 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-gray-300">
-                {item.count} {item.label.toLowerCase()}
-              </span>
-            ))}
+            {sectionSummary.map((item) => (<span key={item.category} className="px-2.5 py-1 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-gray-300">{item.count} {item.label.toLowerCase()}</span>))}
           </div>
         </div>
       </AnimatedSection>
-
       {generatedFiles.length > 1 && (
         <AnimatedSection delay={100}>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -1150,7 +1194,6 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </AnimatedSection>
       )}
-
       {generatedFiles.length > 0 && (
         <AnimatedSection delay={200}>
           <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
@@ -1166,13 +1209,10 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 <button onClick={() => handleDownloadSingle(generatedFiles[activeFile])} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all"><Download className="w-3.5 h-3.5" /></button>
               </div>
             </div>
-            <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">
-              {renderMarkdownPreview(generatedFiles[activeFile].content)}
-            </div>
+            <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">{renderMarkdownPreview(generatedFiles[activeFile].content)}</div>
           </div>
         </AnimatedSection>
       )}
-
       <AnimatedSection delay={300}>
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
           <div className="flex items-center justify-between">
@@ -1186,7 +1226,6 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
-
       <AnimatedSection delay={400}>
         <div className="p-4 rounded-xl bg-blue-500/[0.04] border border-blue-500/10">
           <div className="flex items-start gap-2.5">
@@ -1200,7 +1239,6 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
-
       <AnimatedSection delay={500}>
         <div className="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
           <h4 className="text-sm font-semibold text-white mb-3">How to use with Claude</h4>
@@ -1213,7 +1251,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
             ].map(item => (
               <div key={item.step} className="flex items-start gap-2.5">
                 <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
-                <p className="text-sm text-gray-400 flex items-center gap-1">{item.text}</p>
+                <p className="text-sm text-gray-400">{item.text}</p>
               </div>
             ))}
           </div>
@@ -1264,16 +1302,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
-      {/* Background effects */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
         <div className="absolute top-[40%] right-[-10%] w-[400px] h-[400px] bg-gradient-to-l from-blue-600/[0.03] to-transparent rounded-full blur-[80px]" />
         <div className="absolute bottom-[-5%] left-[-5%] w-[500px] h-[300px] bg-gradient-to-tr from-blue-500/[0.025] to-transparent rounded-full blur-[80px]" />
       </div>
       <div className="fixed inset-0 pointer-events-none opacity-[0.012]" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`, backgroundSize: '64px 64px' }} />
-
       <div className="relative z-10">
-        {/* Header */}
         <header className="border-b border-white/[0.05]">
           <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -1285,8 +1320,6 @@ export default function App() {
             </div>
           </div>
         </header>
-
-        {/* Hero — only on upload step with no files */}
         {currentStep === 'upload' && files.length === 0 && (
           <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
             <AnimatedSection>
@@ -1318,8 +1351,6 @@ export default function App() {
             </AnimatedSection>
           </div>
         )}
-
-        {/* Stepper */}
         <div className="max-w-5xl mx-auto px-6 py-5">
           <div className="flex items-center justify-between mb-7">
             {STEPS.map((step, i) => (
@@ -1336,8 +1367,6 @@ export default function App() {
               </div>
             ))}
           </div>
-
-          {/* Main Content */}
           <div className="max-w-3xl mx-auto">
             <div key={currentStep}>
               {currentStep === 'upload' && <FileUploadZone files={files} onFilesAdded={handleFilesAdded} onRemoveFile={handleRemoveFile} onSampleLoad={handleAddSample} />}
@@ -1345,8 +1374,6 @@ export default function App() {
               {currentStep === 'configure' && <SkillConfigurator config={config} files={files} onUpdateConfig={setConfig} />}
               {currentStep === 'generate' && <SkillOutput files={files} config={config} />}
             </div>
-
-            {/* Navigation */}
             <div className="flex items-center justify-between mt-7 pb-10">
               <button onClick={goPrev} disabled={stepIndex === 0} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all ${stepIndex === 0 ? 'opacity-0 pointer-events-none' : 'text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05]'}`}>
                 <ArrowLeft className="w-3.5 h-3.5" />Back
@@ -1359,18 +1386,13 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        {/* Footer */}
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">Your files stay on your device - nothing is uploaded to any server</p>
-            <p className="text-[11px] text-gray-700">Relatch v1.0</p>
+            <p className="text-[11px] text-gray-700">Relatch v1.1</p>
           </div>
         </footer>
       </div>
     </div>
   );
 }
-// redeploy fix
-
-
