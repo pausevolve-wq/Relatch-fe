@@ -1024,7 +1024,17 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
           .filter(f => config.categories[f.category]?.enabled)
-          .map(f => ({ filename: `${slug}-${f.category}.md`, content: f.content, category: f.category, tokenEstimate: estimateTokens(f.content) }));
+          .map(f => {
+  const finalContent = config.customNotes?.trim()
+    ? `## Custom Instructions\n\n> These instructions take highest priority.\n\n${config.customNotes.trim()}\n\n---\n\n${f.content}`
+    : f.content;
+  return {
+    filename: `${slug}-${f.category}.md`,
+    content: finalContent,
+    category: f.category,
+    tokenEstimate: estimateTokens(finalContent),
+  };
+});
         if (!cancelled) setGeneratedFiles(results);
       } catch (err) {
         if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
