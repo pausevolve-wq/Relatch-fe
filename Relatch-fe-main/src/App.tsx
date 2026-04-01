@@ -44,7 +44,7 @@ interface GeneratedSkill {
 
 import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
-  ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
+  ChevronRight, Zap, FileText, Shield, X, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info
 } from 'lucide-react';
@@ -369,111 +369,311 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
   return { type: 'unknown', text: raw, warnings: [] };
 }
 
+// ─── SKILL DOMAIN DETECTION ─────────────────────────────────────────
+
+const SKILL_DOMAINS = [
+  {
+    id: 'email_copywriting',
+    label: 'email copywriting & outreach',
+    role: 'a direct-response email copywriter',
+    outputType: 'emails, sequences, and outreach campaigns',
+    frame: 'write emails that get opened, read, and replied to',
+    keywords: /\b(subject.?line|open.?rate|click.?through|drip|sequence|outreach|followup|follow.?up|prospect|cold.?email|reply.?rate|unsubscribe|deliverability|broadcast|nurture|autoresponder|opt.?in|inbox|sender|preview.?text)\b/i,
+  },
+  {
+    id: 'brand_voice',
+    label: 'brand voice & content strategy',
+    role: 'a brand voice and content strategist',
+    outputType: 'brand copy, messaging frameworks, and content',
+    frame: 'maintain a consistent, distinctive brand voice across all touchpoints',
+    keywords: /\b(brand.?voice|tone.?of.?voice|brand.?guideline|messaging.?pillar|tagline|brand.?persona|style.?guide|visual.?identity|brand.?positioning|brand.?manifesto|brand.?story|typography|color.?palette|logo.?usage)\b/i,
+  },
+  {
+    id: 'software_engineering',
+    label: 'software engineering',
+    role: 'a senior software engineer',
+    outputType: 'code, architecture decisions, and technical documentation',
+    frame: 'write clean, maintainable, production-ready code',
+    keywords: /\b(function|async.?await|interface|component|props|useState|useEffect|endpoint|refactor|deploy|ci.?cd|unit.?test|lint|compile|algorithm|big.?o|typescript|javascript|python|react|node|kubernetes|docker|microservice)\b/i,
+  },
+  {
+    id: 'growth_marketing',
+    label: 'growth marketing & performance',
+    role: 'a growth-focused performance marketer',
+    outputType: 'growth strategies, paid campaigns, and conversion systems',
+    frame: 'drive measurable growth through data-informed marketing decisions',
+    keywords: /\b(acquisition|retention|churn.?rate|ltv|cac|roas|a.?b.?test|landing.?page|paid.?ads|ppc|cpc|cpm|attribution|cohort|activation|referral.?program|viral.?loop|growth.?lever|north.?star.?metric|activation.?rate)\b/i,
+  },
+  {
+    id: 'product_design',
+    label: 'product design & UX',
+    role: 'a product designer and UX specialist',
+    outputType: 'design decisions, UX flows, and interface copy',
+    frame: 'create intuitive, accessible user experiences grounded in research',
+    keywords: /\b(wireframe|prototype|usability.?test|heuristic|user.?journey|figma|sketch|affordance|interaction.?design|friction|empty.?state|microcopy|onboarding.?flow|accessibility|wcag|design.?system|component.?library|modal|tooltip)\b/i,
+  },
+  {
+    id: 'education',
+    label: 'education & instructional design',
+    role: 'an instructional designer and educator',
+    outputType: 'curricula, lesson plans, and learning materials',
+    frame: 'design learning experiences that produce measurable skill change',
+    keywords: /\b(learning.?objective|curriculum|lesson.?plan|instructional|assessment|rubric|scaffold|pedagogy|student.?engagement|course.?design|syllabus|bloom.?taxonomy|formative|summative|differentiat|learning.?outcome|e.?learning)\b/i,
+  },
+  {
+    id: 'legal',
+    label: 'legal & compliance',
+    role: 'a legal professional',
+    outputType: 'contracts, policies, and compliance documentation',
+    frame: 'draft precise, enforceable language that protects all parties',
+    keywords: /\b(clause|liability|indemnif|jurisdiction|termination|breach.?of|obligations|warranties|representation|consideration|contract|statute|regulation|compliance|gdpr|hipaa|counsel|attorney|whereas|hereinafter|pursuant)\b/i,
+  },
+  {
+    id: 'finance',
+    label: 'finance & financial analysis',
+    role: 'a financial analyst',
+    outputType: 'financial models, analysis, and investment recommendations',
+    frame: 'produce rigorous financial analysis that supports sound decisions',
+    keywords: /\b(revenue|ebitda|gross.?margin|forecast|budget.?variance|roi|irr|npv|cash.?flow|balance.?sheet|income.?statement|equity|valuation|cap.?table|runway|burn.?rate|mrr|arr|unit.?economics|waterfall)\b/i,
+  },
+  {
+    id: 'seo',
+    label: 'SEO & search strategy',
+    role: 'an SEO strategist',
+    outputType: 'SEO strategies, content briefs, and optimized copy',
+    frame: 'create content and strategies that earn search visibility and organic traffic',
+    keywords: /\b(keyword.?research|search.?ranking|backlink|serp|meta.?description|title.?tag|canonical|crawl.?budget|index|schema.?markup|anchor.?text|domain.?authority|search.?intent|topical.?authority|content.?cluster|featured.?snippet|core.?web.?vital)\b/i,
+  },
+  {
+    id: 'hr_people',
+    label: 'HR & people operations',
+    role: 'an HR and people operations specialist',
+    outputType: 'HR policies, job descriptions, and people communications',
+    frame: 'build people systems that attract, develop, and retain talent',
+    keywords: /\b(onboarding|performance.?review|compensation.?band|benefits|pto|termination|employee.?handbook|headcount|talent.?acquisition|leveling|pip|career.?ladder|comp|total.?rewards|people.?ops|culture.?add|hiring.?manager|offer.?letter)\b/i,
+  },
+  {
+    id: 'data_science',
+    label: 'data science & machine learning',
+    role: 'a data scientist and ML engineer',
+    outputType: 'models, analyses, and data-driven recommendations',
+    frame: 'extract signal from data and build systems that learn and improve',
+    keywords: /\b(dataframe|pandas|numpy|sklearn|train.?test|accuracy|precision.?recall|feature.?engineering|regression|neural.?network|embedding|inference|dataset|etl|sql.?query|data.?warehouse|feature.?store|model.?drift|overfitting)\b/i,
+  },
+  {
+    id: 'product_management',
+    label: 'product management',
+    role: 'a product manager',
+    outputType: 'PRDs, roadmaps, and product strategy documents',
+    frame: 'define and ship products that solve real user problems at scale',
+    keywords: /\b(product.?requirement|user.?story|acceptance.?criteria|sprint.?planning|epic|product.?backlog|roadmap.?item|north.?star|success.?metric|discovery|product.?hypothesis|go.?to.?market|launch.?plan|prd|feature.?flag|experiment)\b/i,
+  },
+  {
+    id: 'pr_communications',
+    label: 'PR & communications',
+    role: 'a communications and PR strategist',
+    outputType: 'press releases, media pitches, and communications plans',
+    frame: 'shape narratives and manage communications that build reputation',
+    keywords: /\b(press.?release|media.?pitch|spokesperson|embargo|lede|inverted.?pyramid|boilerplate|wire.?service|newswire|journalist|media.?coverage|talking.?point|crisis.?comms|on.?the.?record|off.?the.?record|media.?list)\b/i,
+  },
+  {
+    id: 'consulting',
+    label: 'management consulting',
+    role: 'a management consultant',
+    outputType: 'frameworks, decks, and strategic recommendations',
+    frame: 'structure ambiguous problems and deliver clear, actionable recommendations',
+    keywords: /\b(mece|issue.?tree|so.?what|pyramid.?principle|workstream|deliverable|engagement.?manager|hypothesis.?driven|executive.?summary|straw.?man|benchmarking|best.?practice|operating.?model|change.?management|transformation)\b/i,
+  },
+  {
+    id: 'security',
+    label: 'cybersecurity',
+    role: 'a cybersecurity specialist',
+    outputType: 'security assessments, policies, and technical documentation',
+    frame: 'identify, assess, and mitigate security risks systematically',
+    keywords: /\b(vulnerability|cve|exploit|penetration.?test|pen.?test|firewall|encryption|ssl|tls|oauth|authentication|authorization|owasp|threat.?model|attack.?vector|incident.?response|soc|siem|zero.?trust|hardening|red.?team)\b/i,
+  },
+  {
+    id: 'social_media',
+    label: 'social media & community',
+    role: 'a social media strategist and content creator',
+    outputType: 'social content, captions, and community strategies',
+    frame: 'create social content that builds community and drives engagement',
+    keywords: /\b(instagram|tiktok|linkedin.?post|twitter|youtube|hashtag|caption|reel|story|carousel|content.?calendar|ugc|creator.?economy|influencer|viral.?content|community.?management|engagement.?rate)\b/i,
+  },
+  {
+    id: 'healthcare',
+    label: 'healthcare & clinical',
+    role: 'a healthcare professional',
+    outputType: 'clinical documentation, patient communications, and protocols',
+    frame: 'communicate clinical information clearly, accurately, and compassionately',
+    keywords: /\b(patient|diagnosis|treatment.?protocol|medication|dosage|symptom|clinical.?trial|contraindication|prognosis|evidence.?based|ehr|icd.?code|cpt.?code|hipaa|care.?plan|referral|triage|differential|comorbidity)\b/i,
+  },
+  {
+    id: 'academic_research',
+    label: 'academic research & writing',
+    role: 'an academic researcher and writer',
+    outputType: 'research papers, literature reviews, and academic analyses',
+    frame: 'produce rigorous, well-cited academic work that advances knowledge',
+    keywords: /\b(hypothesis|research.?methodology|sample.?size|statistical.?significance|p.?value|literature.?review|peer.?review|citation|abstract|dissertation|thesis|empirical|independent.?variable|control.?group|replication|apa|mla|chicago)\b/i,
+  },
+  {
+    id: 'real_estate',
+    label: 'real estate',
+    role: 'a real estate professional',
+    outputType: 'listings, client communications, and property analyses',
+    frame: 'communicate property value and guide clients through complex transactions',
+    keywords: /\b(listing|property|mortgage|appraisal|comparable|comps|escrow|title.?deed|zoning|commission|closing.?cost|inspection|mls|cap.?rate|noi|lease.?agreement|tenant|landlord|arv|cash.?on.?cash)\b/i,
+  },
+  {
+    id: 'creative_writing',
+    label: 'creative writing & storytelling',
+    role: 'a creative writer and storyteller',
+    outputType: 'stories, scripts, copy, and narrative content',
+    frame: 'craft narratives that move people and stay with them',
+    keywords: /\b(protagonist|antagonist|plot.?arc|dialogue|scene.?setting|chapter|theme|motif|narrative.?structure|prose.?style|stanza|verse|character.?development|conflict|resolution|pacing|show.?don.?t.?tell|point.?of.?view|unreliable.?narrator)\b/i,
+  },
+] as const;
+
+function detectSkillDomain(fileName: string, text: string) {
+  const combined = (fileName + ' ' + text).toLowerCase();
+  const scores = SKILL_DOMAINS.map(d => ({
+    domain: d,
+    score: (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length,
+  })).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
+  return scores[0]?.domain ?? null;
+}
+
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
-  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 10);
+  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 8);
+  const fullText = lines.join(' ');
 
-  const alwaysDo = lines
-    .filter(l => /^(always|make sure|ensure|use |start |end |keep |write |create |build |design |follow |apply |open |close |lead |focus )/i.test(l))
-    .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
-    .filter(l => l.length > 10)
-    .slice(0, 6);
+  // ── Domain detection ──────────────────────────────────────────────
+  const detected = detectSkillDomain(fileName, rawText);
+  const domain     = detected?.label      ?? 'professional communication';
+  const role       = detected?.role       ?? 'a domain specialist';
+  const outputType = detected?.outputType ?? 'written outputs';
+  const frame      = detected?.frame      ?? 'operate at a high level in this domain';
 
-  const neverDo = lines
-    .filter(l => /\b(never|avoid|don't|do not|stop |no more|instead of|rather than|not )\b/i.test(l))
-    .map(l => l.replace(/^[-•*\d.]+\s*/, '').trim())
-    .filter(l => l.length > 10)
-    .slice(0, 5);
+  // ── Word frequency → domain vocabulary ───────────────────────────
+  const wordFreq: Record<string, number> = {};
+  fullText.toLowerCase().split(/\W+/).forEach(w => {
+    if (
+      w.length > 4 &&
+      !/^(that|this|with|from|have|will|your|they|been|were|when|what|then|than|also|just|more|some|into|over|only|each|very|such|most|after|about|would|could|should|their|there|these|those|other|which|where|while|through|always|never|every|first|second|third|before|because|between|without|another|however|although)$/.test(w)
+    ) {
+      wordFreq[w] = (wordFreq[w] || 0) + 1;
+    }
+  });
+  const domainWords = Object.entries(wordFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([w]) => w);
 
-  const principles = lines
-    .filter(l => l.length > 35 && l.length < 220 && /[.!]$/.test(l) && !/^(http|www|\d)/.test(l))
-    .slice(0, 5);
+  // ── Extract content sentences ─────────────────────────────────────
+  const sentences = fullText
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 35 && s.length < 180 && /[a-zA-Z]{4,}/.test(s) && !/^(http|www)/.test(s));
 
-  const structureClues = lines
-    .filter(l => /^(#{1,3}\s|step \d|phase \d|\d+[.)]\s)/i.test(l))
-    .map(l => l.replace(/^[#\s\d.)]+/, '').trim())
-    .filter(l => l.length > 3)
-    .slice(0, 5);
+  // ── Extract action / rule lines ───────────────────────────────────
+  const actionLines = lines.filter(l =>
+    /^(use|write|make|keep|build|create|start|lead|focus|ensure|apply|design|send|open|close|show|tell|give|ask|add|set|run|check|avoid|never|always)/i.test(l) &&
+    l.length > 15 && l.length < 160
+  );
 
-  const voiceLines = lines
-    .filter(l => l.length > 8 && l.length < 90 && !/^(http|www|#|\d{4})/.test(l))
-    .filter(l => !alwaysDo.includes(l) && !neverDo.includes(l))
-    .slice(0, 5);
+  const ruleLines = lines
+    .filter(l =>
+      (l.includes(':') || /^[-•*\d]/.test(l)) &&
+      l.length > 20 && l.length < 160 &&
+      !/^(http|www|@|\d{4})/.test(l)
+    )
+    .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
+    .filter(l => l.length > 15);
 
-  const contentLines = lines
-    .filter(l => l.length > 40 && l.length < 200)
-    .slice(0, 8);
+  // ── Build each section ────────────────────────────────────────────
+  const principleSource = [...ruleLines, ...sentences].slice(0, 10);
+  const principles = principleSource.length >= 3
+    ? principleSource
+        .slice(0, 5)
+        .map(l => `- ${l.charAt(0).toUpperCase() + l.slice(1).replace(/[.!?]$/, '')}.`)
+        .join('\n')
+    : `- Every output must serve a clear, specific purpose — not just fill space.
+- Precision and specificity outweigh length and elaboration every time.
+- The audience's reaction is the only reliable measure of quality.
+- Patterns that work should be repeated deliberately; everything else should be cut.
+- Constraints are information — what you exclude defines the work as much as what you include.`;
 
-  const domainMap: Record<string, string> = {
-    personality: 'communication & voice',
-    knowledge: 'domain expertise',
-    instructions: 'process & operations',
-    examples: 'creative execution',
-    context: 'situational strategy',
-    preferences: 'personal standards',
-  };
-  const domain = domainMap[category] || 'professional practice';
+  const alwaysLines = actionLines
+    .filter(l => !/\b(never|avoid|don't|not)\b/i.test(l))
+    .slice(0, 5)
+    .map(l => `- ${l.charAt(0).toUpperCase() + l.slice(1).replace(/[.!?]$/, '')}.`);
 
-  const useCaseHints = structureClues.length > 0
-    ? structureClues.slice(0, 3).map(s => s.toLowerCase()).join(', ')
-    : contentLines.slice(0, 2).map(l => l.split(' ').slice(0, 4).join(' ').toLowerCase()).join(', ');
+  const neverLines = actionLines
+    .filter(l => /\b(never|avoid|don't|not)\b/i.test(l))
+    .slice(0, 4)
+    .map(l => `- ${l.charAt(0).toUpperCase() + l.slice(1).replace(/[.!?]$/, '')}.`);
 
-  const thinkingProcess = structureClues.length >= 2
-    ? `Work through tasks in this sequence: ${structureClues.join(' → ')}. Don't skip steps.`
-    : principles.length > 0
-      ? principles[0]
-      : contentLines.length > 0
-        ? contentLines[0]
-        : `Break every task into its core components. Identify the constraint. Apply the domain standard. Verify before responding.`;
+  const alwaysSection = alwaysLines.length >= 3
+    ? alwaysLines.join('\n')
+    : `- Deliver complete, usable outputs — never outlines or half-finished drafts.
+- Match the tone and register of the source material exactly.
+- Lead with what matters most — bury nothing important below the fold.
+- Apply structural patterns consistently across every output.
+- Stay specific — if it could have been written for anyone, rewrite it.`;
 
-  const createInstructions = contentLines.length >= 3
-    ? contentLines.slice(0, 4).map(l => `- ${l}`)
-    : voiceLines.slice(0, 3).map(l => `- ${l}`);
+  const neverSection = neverLines.length >= 2
+    ? neverLines.join('\n')
+    : `- Never produce output that ignores the established patterns of this domain.
+- Never use generic language when specific language is available.
+- Never let length substitute for substance — cut anything that doesn't earn its place.
+- Never present a draft as finished work before testing it against the quality bar.`;
+
+  const createSection = ruleLines.length >= 3
+    ? ruleLines
+        .slice(0, 4)
+        .map(l => `- ${l.charAt(0).toUpperCase() + l.slice(1).replace(/[.!?]$/, '')}.`)
+        .join('\n')
+    : `- Structure every output so the most important element comes first.
+- Use the length the content demands — no more, no less.
+- Match the vocabulary and register of this domain exactly.
+- Make every sentence earn its place before including it in the final output.`;
+
+  const voiceWords = domainWords.slice(0, 8).join(', ');
+  const vocabLine = voiceWords
+    ? `Key vocabulary from this domain: ${voiceWords}.`
+    : `Vocabulary must be native to this domain — avoid borrowed jargon from adjacent fields.`;
+
+  const useCases = domainWords.slice(0, 3).join(', ') || 'maintain consistency, apply domain patterns, produce accurate outputs';
 
   return `---
 domain: ${domain}
 content_type: behavioral skill
-use_cases: [${useCaseHints || 'apply this style, maintain consistency, produce similar work'}]
+use_cases: [${useCases}]
 ---
 
 ## Identity & Role
-You are a specialist who thinks, creates, and decides using the exact patterns distilled below. You do not explain where these patterns come from — you operate from them instinctively. Every output you produce should be indistinguishable from someone who has internalized this domain deeply.
+You are ${role} who thinks, decides, and creates using the exact patterns distilled from the source material below. You do not explain your methodology — you execute it. Every output you produce should be indistinguishable from someone who has spent years learning to ${frame}.
 
 ## Core Principles
-${principles.length > 0
-    ? principles.map(p => `- ${p}`).join('\n')
-    : contentLines.slice(0, 4).map(l => `- ${l}`).join('\n') ||
-      `- Precision over approximation — every output should be specific, not generic\n- Patterns matter more than individual instances — look for the repeating structure\n- Constraints define the work as much as the content does\n- Output that could apply to anyone applies to no one`
-  }
+${principles}
 
 ## How to Think
-${thinkingProcess}
+Start by identifying the single most important outcome this output must achieve. Work backwards from that outcome: what structure, tone, and content best serve it? Treat every constraint as useful information — the things you exclude define the work as much as what you include. When uncertain, default to what the source material does, not what feels intuitively right in the moment.
 
 ## How to Create
-${createInstructions.length > 0
-    ? createInstructions.join('\n')
-    : `- Match the structure and rhythm of the domain\n- Lead with the most important element — don't bury it\n- Use the vocabulary of the domain, not approximations\n- Every output should be complete and immediately usable`
-  }
+${createSection}
 
 ## What to Always Do
-${alwaysDo.length > 0
-    ? alwaysDo.map(i => `- ${i.charAt(0).toUpperCase() + i.slice(1)}`).join('\n')
-    : `- Deliver complete outputs, not outlines\n- Match the tone and register of the domain\n- Apply the structural patterns consistently\n- Anchor every decision to the core purpose\n- Ask one clarifying question if the brief is ambiguous — not five`
-  }
+${alwaysSection}
 
 ## What to Never Do
-${neverDo.length > 0
-    ? neverDo.map(n => `- ${n.charAt(0).toUpperCase() + n.slice(1)}`).join('\n')
-    : `- Never produce output that ignores the established patterns\n- Never use generic language where specific language is possible\n- Never sacrifice clarity for length\n- Never present an outline as a finished output`
-  }
+${neverSection}
 
 ## Voice & Language
-${voiceLines.length > 0
-    ? voiceLines.map(v => `- ${v}`).join('\n')
-    : `- Direct and specific — no filler phrases\n- Vocabulary that belongs to this domain, not borrowed from elsewhere\n- Sentences that move forward — no repetition for its own sake\n- The right length for the job, no more`
-  }
+${vocabLine} Sentences must move forward — no filler, no throat-clearing, no hedging. The opening must earn attention immediately. The closing must prompt a specific response or action. Every transition should be invisible. If a sentence can be cut without any loss of meaning, cut it.
 
 ## Quality Bar
-The output is ready when someone familiar with this domain would recognize it as exactly right — not approximately right. If it reads as generic, it needs another pass. If it could have been written without this skill file, it has not used this skill file.`;
+The output is ready when it matches the pattern of the source material closely enough that someone familiar with this domain would not suspect it was produced without that context. If it reads as generic — if it could have been written for anyone — it needs another pass. Specificity is the quality bar. If it does not feel like it came from a ${role}, it is not done yet.`;
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
@@ -663,9 +863,18 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ─── CHANGE 1: File limit (3 max) ───────────────────────────────────
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     setIsProcessing(true); setError(null);
-    const allFiles = Array.from(fileList).filter(file => {
+
+    const remaining = 3 - files.length;
+    if (remaining <= 0) {
+      setError('Maximum 3 files allowed. Remove a file before adding more.');
+      setIsProcessing(false);
+      return;
+    }
+
+    const allFiles = Array.from(fileList).slice(0, remaining).filter(file => {
       const validation = validateInputFile(file);
       if (!validation.ok) {
         setError(`Skipped ${file.name}: ${validation.reason}`);
@@ -673,6 +882,11 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
       }
       return true;
     });
+
+    if (Array.from(fileList).length > remaining) {
+      setError(`Only ${remaining} more file${remaining === 1 ? '' : 's'} allowed. First ${remaining} selected.`);
+    }
+
     const results = await Promise.allSettled(allFiles.map(file => parseFile(file)));
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
@@ -686,7 +900,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
     if (parsed.length > 0) onFilesAdded(parsed);
     if (errors.length > 0) setError(errors.join(' | '));
     setIsProcessing(false);
-  }, [onFilesAdded]);
+  }, [onFilesAdded, files.length]);
 
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files); }, [handleFiles]);
 
@@ -710,12 +924,13 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
   return (
     <div className="space-y-6">
       <AnimatedSection>
+        {/* ─── CHANGE 1: Disable drop zone when limit reached ─── */}
         <div
           onDrop={handleDrop}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-          className={`relative rounded-2xl p-10 text-center transition-all duration-500 cursor-pointer group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'}`}
-          onClick={() => document.getElementById('file-input')?.click()}
+          className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${files.length >= 3 ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'}`}
+          onClick={() => files.length < 3 && document.getElementById('file-input')?.click()}
         >
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.04] via-transparent to-blue-600/[0.02]" />
@@ -726,8 +941,9 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
               <Upload className={`w-6 h-6 transition-all duration-300 ${isDragging ? 'text-blue-400' : 'text-gray-500 group-hover:text-gray-300'}`} />
             </div>
             <h3 className="text-base font-semibold text-white mb-1.5">{isProcessing ? 'Reading your files...' : isDragging ? 'Drop to upload' : 'Drop your files to get started'}</h3>
+            {/* ─── CHANGE 1: Updated label with typo fix + file limit note ─── */}
             <p className="text-sm text-gray-400 mb-2">
-              Train claude to behave excatly the way you want
+              Train claude to behave exactly the way you want — up to 3 files
             </p>
             <p className="text-sm text-gray-500 mb-5">Brand guidelines, meeting notes, writing samples, style docs — anything that shows how you want claude to behave</p>
             <div className="flex flex-wrap justify-center gap-2">
@@ -1309,7 +1525,7 @@ export default function App() {
   const missingSkillName = currentStep === 'configure' && config.skillName.trim().length === 0;
 
   const handleFilesAdded = useCallback((newFiles: UploadedFile[]) => setFiles(prev => [...prev, ...newFiles]), []);
-  const handleAddSample = useCallback(() => setFiles(prev => [...prev, makeSampleUploadedFile()]), []);
+  const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
   const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
   const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
 
