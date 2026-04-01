@@ -1288,23 +1288,36 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
         const results: GeneratedSkill[] = files
           .filter(f => config.categories[f.category]?.enabled)
           .map(f => {
-            const injectCustomNotes = (content: string, notes: string): string => {
-              if (!notes.trim()) return content;
-              const frontmatterMatch = content.match(/^(---[\s\S]*?---\n)/);
-              if (frontmatterMatch) {
-                const frontmatter = frontmatterMatch[1];
-                const body = content.slice(frontmatter.length);
-                return frontmatter
-                  + '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
-                  + notes.trim()
-                  + '\n\n'
-                  + body;
-              }
-              return '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
-                + notes.trim()
-                + '\n\n'
-                + content;
-            };
+           const injectCustomNotes = (content: string, notes: string): string => {
+                const cleanContent = content.trim();
+                
+                // Match exactly the frontmatter block, capturing up to the closing ---
+                const frontmatterMatch = cleanContent.match(/^(---[\s\S]*?\n---)/);
+
+                let frontmatter = '';
+                let body = cleanContent;
+
+                if (frontmatterMatch) {
+                  frontmatter = frontmatterMatch[1];
+                  // Get everything after the YAML block and strip leading white space
+                  body = cleanContent.slice(frontmatter.length).trimStart();
+                }
+
+                let finalOutput = '';
+                if (frontmatter) {
+                  // Force exactly two newlines (a blank line) after the YAML
+                  finalOutput += frontmatter + '\n\n';
+                }
+
+                // Inject custom notes if the user typed them
+                if (notes && notes.trim()) {
+                  finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
+                }
+
+                // Add the rest of the AI-generated skill content
+                finalOutput += body;
+                return finalOutput;
+              };
             const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
             return {
               filename: `${slug}-${f.category}.md`,
