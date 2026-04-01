@@ -715,21 +715,18 @@ function fixAiYamlFrontmatter(content: string): string {
     /^(---\n)([\s\S]*?)\n(^---)/m,
     (_match, open, body, close) => {
       const fixedBody = body
-        // Fix: domain: social media & community -> domain: "social media & community"
         .replace(/^(domain:\s*)(.+)$/m, (_l: string, key: string, val: string) => {
           const trimmed = val.trim();
           if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
               (trimmed.startsWith("'") && trimmed.endsWith("'"))) return `${key}${trimmed}`;
           return `${key}${sanitizeYamlValue(trimmed)}`;
         })
-        // Fix: content_type: behavioral skill -> content_type: "behavioral skill"
         .replace(/^(content_type:\s*)(.+)$/m, (_l: string, key: string, val: string) => {
           const trimmed = val.trim();
           if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
               (trimmed.startsWith("'") && trimmed.endsWith("'"))) return `${key}${trimmed}`;
           return `${key}${sanitizeYamlValue(trimmed)}`;
         })
-        // Fix: use_cases: [email copywriting & outreach, ...]
         .replace(/^(use_cases:\s*\[)(.+?)(\])$/m, (_l: string, prefix: string, items: string, suffix: string) => {
           const fixed = items.split(',').map((item: string) => {
             const t = item.trim();
@@ -744,6 +741,12 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
+async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
+  if (!rawText || rawText.trim().length < 20) {
+    console.warn(`[enrichWithAI] text too short, using fallback`);
+    return generateFallbackSkill(rawText || '', fileName, category);
+  }
+
   try {
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
@@ -751,39 +754,20 @@ function fixAiYamlFrontmatter(content: string): string {
       body: JSON.stringify({ rawText, category, fileName }),
     });
 
-    // Handle structured errors from backend
     if (response.status === 422) {
-      const err = await response.json().catch(() => ({}));
-      if (err.error === 'INSUFFICIENT_SIGNAL') {
-        console.warn(`[enrichWithAI] INSUFFICIENT_SIGNAL for ${fileName}`);
-        return generateFallbackSkill(rawText, fileName, category);
-      }
-    }
-
-    // 503 = AI backend failed, 504 = Vercel timeout, 404 = route not deployed yet
-    // All three: log and fall back gracefully — never throw to the user
-    if (response.status === 503 || response.status === 504 || response.status === 404) {
-      const err = await response.json().catch(() => ({}));
-      console.warn(`[enrichWithAI] proxy ${response.status} for ${fileName}:`, err.message ?? response.statusText);
       return generateFallbackSkill(rawText, fileName, category);
     }
 
     if (!response.ok) {
-      // Any other non-2xx: log but still fall back rather than crash the whole upload
-      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-      console.error(`[enrichWithAI] API error ${response.status}:`, err);
       return generateFallbackSkill(rawText, fileName, category);
     }
 
     const data = await response.json();
     if (!data.enriched) {
-      console.warn('[enrichWithAI] empty enriched response, using fallback');
       return generateFallbackSkill(rawText, fileName, category);
     }
 
-    console.info(`[enrichWithAI] success via ${data.model}: ${data.enriched.length} chars`);
     return fixAiYamlFrontmatter(data.enriched);
-
   } catch (err) {
     console.error('[enrichWithAI] threw:', err);
     return generateFallbackSkill(rawText, fileName, category);
