@@ -1290,24 +1290,30 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           .map(f => {
            const injectCustomNotes = (content: string, notes: string): string => {
                 const cleanContent = content.trim();
-                
-                // Match exactly the frontmatter block, capturing up to the closing ---
-                const frontmatterMatch = cleanContent.match(/^(---[\s\S]*?\n---)/);
+
+                // Look for content between two sets of --- (No ^ anchor so it ignores preambles)
+                const yamlRegex = /---\n([\s\S]*?)\n---/;
+                const match = cleanContent.match(yamlRegex);
 
                 let frontmatter = '';
                 let body = cleanContent;
 
-                if (frontmatterMatch) {
-                  frontmatter = frontmatterMatch[1];
-                  // Get everything after the YAML block and strip leading white space
-                  body = cleanContent.slice(frontmatter.length).trimStart();
+                if (match) {
+                  // Reconstruct the frontmatter perfectly, deleting ANY preamble before it
+                  frontmatter = `---\n${match[1].trim()}\n---`;
+                  // Keep only the text that comes AFTER the YAML block
+                  const splitParts = cleanContent.split(match[0]);
+                  body = (splitParts[1] || '').trimStart();
+                } else {
+                  // NUCLEAR FALLBACK: If the AI forgets the YAML entirely,
+                  // inject a default block so Claude never throws an error.
+                  frontmatter = `---\ndomain: "General"\ncontent_type: "behavioral skill"\nuse_cases: ["Professional Communication"]\n---`;
+                  // Treat the entire AI response as the body
+                  body = cleanContent; 
                 }
 
-                let finalOutput = '';
-                if (frontmatter) {
-                  // Force exactly two newlines (a blank line) after the YAML
-                  finalOutput += frontmatter + '\n\n';
-                }
+                // Force the YAML to be the absolute first thing in the file
+                let finalOutput = frontmatter + '\n\n';
 
                 // Inject custom notes if the user typed them
                 if (notes && notes.trim()) {
