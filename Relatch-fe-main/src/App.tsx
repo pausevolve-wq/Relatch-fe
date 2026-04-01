@@ -582,13 +582,21 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
   );
 
   const ruleLines = lines
-    .filter(l =>
-      (l.includes(':') || /^[-•*\d]/.test(l)) &&
-      l.length > 20 && l.length < 160 &&
-      !/^(http|www|@|\d{4})/.test(l)
-    )
-    .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
-    .filter(l => l.length > 15);
+  .filter(l => {
+    if (l.length <= 20 || l.length >= 160) return false;
+    if (/^(http|www|@|\d{4})/.test(l)) return false;
+    if (/^subject.?line/i.test(l)) return false;
+    if (/email\s*#\d/i.test(l)) return false;
+    if (/^\d+\s*emails?[;,]/i.test(l)) return false;
+    if (/\[name\]/i.test(l)) return false;
+    if (/^(ps:|p\.s\.|p\.s:)/i.test(l)) return false;
+    const hasInstruction = /\b(always|never|write|use|make|keep|lead|start|end|ensure|avoid|focus|apply|send|create|build|design|follow|check|avoid)\b/i.test(l);
+    const hasBullet = /^[-•*]/.test(l);
+    const hasColon = l.includes(':') && l.indexOf(':') > 8;
+    return hasInstruction || hasBullet || hasColon;
+  })
+  .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
+  .filter(l => l.length > 15);
 
   // ── Build each section ────────────────────────────────────────────
   const principleSource = [...ruleLines, ...sentences].slice(0, 10);
@@ -1239,18 +1247,34 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       try {
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
-          .filter(f => config.categories[f.category]?.enabled)
-          .map(f => {
-  const finalContent = config.customNotes?.trim()
-    ? `## Custom Instructions\n\n> These instructions take highest priority.\n\n${config.customNotes.trim()}\n\n---\n\n${f.content}`
-    : f.content;
-  return {
-    filename: `${slug}-${f.category}.md`,
-    content: finalContent,
-    category: f.category,
-    tokenEstimate: estimateTokens(finalContent),
-  };
-});
+  .filter(f => config.categories[f.category]?.enabled)
+  .map(f => {
+    const injectCustomNotes = (content: string, notes: string): string => {
+      if (!notes.trim()) return content;
+      const frontmatterMatch = content.match(/^(---[\s\S]*?---\n)/);
+      if (frontmatterMatch) {
+        const frontmatter = frontmatterMatch[1];
+        const body = content.slice(frontmatter.length);
+        return frontmatter
+          + '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
+          + notes.trim()
+          + '\n\n---\n\n'
+          + body;
+      }
+      return '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
+        + notes.trim()
+        + '\n\n---\n\n'
+        + content;
+    };
+
+    const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
+    return {
+      filename: `${slug}-${f.category}.md`,
+      content: finalContent,
+      category: f.category,
+      tokenEstimate: estimateTokens(finalContent),
+    };
+  });
         if (!cancelled) setGeneratedFiles(results);
       } catch (err) {
         if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
