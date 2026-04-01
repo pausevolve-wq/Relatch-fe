@@ -699,20 +699,37 @@ The output is ready when it matches the pattern of the source material closely e
 // The AI sometimes produces unquoted special characters (& : # etc.) in
 // the domain/use_cases fields, which breaks Claude's YAML parser.
 function fixAiYamlFrontmatter(content: string): string {
-  return content.replace(
-    /^(---\n)([\s\S]*?)\n(---)/m,
+  // 1. Strip markdown code fences if the AI wrapped the response
+  let cleanContent = content.trim();
+  if (cleanContent.startsWith('```markdown')) {
+    cleanContent = cleanContent.replace(/^```markdown\s*\n/i, '');
+  } else if (cleanContent.startsWith('```')) {
+    cleanContent = cleanContent.replace(/^```[a-z]*\s*\n/i, '');
+  }
+  if (cleanContent.endsWith('```')) {
+    cleanContent = cleanContent.replace(/\n```$/, '');
+  }
+
+  // 2. Fix the YAML anchoring and field quoting
+  return cleanContent.replace(
+    /^(---\n)([\s\S]*?)\n(^---)/m,
     (_match, open, body, close) => {
       const fixedBody = body
-        // Fix: domain: social media & community  →  domain: "social media & community"
+        // Fix: domain: social media & community -> domain: "social media & community"
         .replace(/^(domain:\s*)(.+)$/m, (_l: string, key: string, val: string) => {
           const trimmed = val.trim();
-          // Already quoted → leave alone
+          if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+              (trimmed.startsWith("'") && trimmed.endsWith("'"))) return `${key}${trimmed}`;
+          return `${key}${sanitizeYamlValue(trimmed)}`;
+        })
+        // Fix: content_type: behavioral skill -> content_type: "behavioral skill"
+        .replace(/^(content_type:\s*)(.+)$/m, (_l: string, key: string, val: string) => {
+          const trimmed = val.trim();
           if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
               (trimmed.startsWith("'") && trimmed.endsWith("'"))) return `${key}${trimmed}`;
           return `${key}${sanitizeYamlValue(trimmed)}`;
         })
         // Fix: use_cases: [email copywriting & outreach, ...]
-        // Sanitize each item inside the flow sequence
         .replace(/^(use_cases:\s*\[)(.+?)(\])$/m, (_l: string, prefix: string, items: string, suffix: string) => {
           const fixed = items.split(',').map((item: string) => {
             const t = item.trim();
@@ -726,13 +743,6 @@ function fixAiYamlFrontmatter(content: string): string {
     }
   );
 }
-
-async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
-  // Don't even attempt API call if text is too short
-  if (!rawText || rawText.trim().length < 20) {
-    console.warn(`[enrichWithAI] text too short (${rawText?.trim().length || 0} chars), using fallback`);
-    return generateFallbackSkill(rawText || '', fileName, category);
-  }
 
   try {
     const response = await fetch(ENRICH_PROXY_URL, {
