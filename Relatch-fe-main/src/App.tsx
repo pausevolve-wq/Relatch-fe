@@ -659,11 +659,15 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
     : `Vocabulary must be native to this domain — avoid borrowed jargon from adjacent fields.`;
 
   const useCases = domainWords.slice(0, 3).join(', ') || 'maintain consistency, apply domain patterns, produce accurate outputs';
+  // Sanitize each use_cases token — word-frequency tokens can contain hyphens, colons, etc.
+  const sanitizedUseCases = (domainWords.slice(0, 3).length > 0
+    ? domainWords.slice(0, 3).map(w => sanitizeYamlValue(w)).join(', ')
+    : 'consistency, patterns, accuracy');
 
   return `---
 domain: ${sanitizeYamlValue(domain)}
 content_type: behavioral skill
-use_cases: [${useCases}]
+use_cases: [${sanitizedUseCases}]
 ---
 
 ## Identity & Role
@@ -691,6 +695,38 @@ ${vocabLine} Sentences must move forward — no filler, no throat-clearing, no h
 The output is ready when it matches the pattern of the source material closely enough that someone familiar with this domain would not suspect it was produced without that context. If it reads as generic — if it could have been written for anyone — it needs another pass. Specificity is the quality bar. If it does not feel like it came from a ${role}, it is not done yet.`;
 }
 
+// Fix YAML frontmatter values returned by the AI enrichment endpoint.
+// The AI sometimes produces unquoted special characters (& : # etc.) in
+// the domain/use_cases fields, which breaks Claude's YAML parser.
+function fixAiYamlFrontmatter(content: string): string {
+  return content.replace(
+    /^(---\n)([\s\S]*?)\n(---)/m,
+    (_match, open, body, close) => {
+      const fixedBody = body
+        // Fix: domain: social media & community  →  domain: "social media & community"
+        .replace(/^(domain:\s*)(.+)$/m, (_l: string, key: string, val: string) => {
+          const trimmed = val.trim();
+          // Already quoted → leave alone
+          if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+              (trimmed.startsWith("'") && trimmed.endsWith("'"))) return `${key}${trimmed}`;
+          return `${key}${sanitizeYamlValue(trimmed)}`;
+        })
+        // Fix: use_cases: [email copywriting & outreach, ...]
+        // Sanitize each item inside the flow sequence
+        .replace(/^(use_cases:\s*\[)(.+?)(\])$/m, (_l: string, prefix: string, items: string, suffix: string) => {
+          const fixed = items.split(',').map((item: string) => {
+            const t = item.trim();
+            if ((t.startsWith('"') && t.endsWith('"')) ||
+                (t.startsWith("'") && t.endsWith("'"))) return ` ${t}`;
+            return ` ${sanitizeYamlValue(t)}`;
+          }).join(',');
+          return `${prefix}${fixed}${suffix}`;
+        });
+      return `${open}${fixedBody}\n${close}`;
+    }
+  );
+}
+
 async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
   // Don't even attempt API call if text is too short
   if (!rawText || rawText.trim().length < 20) {
@@ -710,21 +746,23 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
       const err = await response.json().catch(() => ({}));
       if (err.error === 'INSUFFICIENT_SIGNAL') {
         console.warn(`[enrichWithAI] INSUFFICIENT_SIGNAL for ${fileName}`);
-        // Still run rule-based fallback — better than nothing
         return generateFallbackSkill(rawText, fileName, category);
       }
     }
 
-    if (response.status === 503) {
+    // 503 = AI backend failed, 504 = Vercel timeout, 404 = route not deployed yet
+    // All three: log and fall back gracefully — never throw to the user
+    if (response.status === 503 || response.status === 504 || response.status === 404) {
       const err = await response.json().catch(() => ({}));
-      console.warn(`[enrichWithAI] AI_FAILED for ${fileName}:`, err.message);
+      console.warn(`[enrichWithAI] proxy ${response.status} for ${fileName}:`, err.message ?? response.statusText);
       return generateFallbackSkill(rawText, fileName, category);
     }
 
     if (!response.ok) {
+      // Any other non-2xx: log but still fall back rather than crash the whole upload
       const err = await response.json().catch(() => ({ error: 'Unknown error' }));
       console.error(`[enrichWithAI] API error ${response.status}:`, err);
-      throw new Error(err.error || `API error ${response.status}`);
+      return generateFallbackSkill(rawText, fileName, category);
     }
 
     const data = await response.json();
@@ -734,7 +772,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
     }
 
     console.info(`[enrichWithAI] success via ${data.model}: ${data.enriched.length} chars`);
-    return data.enriched;
+    return fixAiYamlFrontmatter(data.enriched);
 
   } catch (err) {
     console.error('[enrichWithAI] threw:', err);
