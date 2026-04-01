@@ -1292,39 +1292,41 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 let cleanContent = content.replace(/\r/g, '').trim();
                 cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-                // Values extract karte hain
+                // Extract values
                 const domainMatch = cleanContent.match(/domain:\s*"?([^"\n]+)"?/);
                 const domain = domainMatch ? domainMatch[1].trim() : "General";
 
                 const typeMatch = cleanContent.match(/content_type:\s*"?([^"\n]+)"?/);
                 const contentType = typeMatch ? typeMatch[1].trim() : "behavioral skill";
 
-                // use_cases ko nikal kar strict bullet format banayenge
+                // Format use_cases as strict bullets
                 let useCases: string[] = ["Professional Communication"];
                 const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
                 
                 if (useCasesMatch) {
                   const rawCases = useCasesMatch[1];
                   if (rawCases.startsWith('[')) {
-                    // Inline array ko split karna
                     useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
                   } else {
-                    // Bullets ko split karna
                     useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
                   }
                 }
 
-                // AI formatting bhool jao, naya 100% secure YAML banate hain
+                // Clean the skill name to prevent quote errors
+                const safeSkillName = config.skillName ? config.skillName.replace(/"/g, '') : "My Custom Skill";
+
+                // Build the 100% secure YAML with the required NAME field
                 let frontmatter = `---\n`;
-                frontmatter += `domain: ${domain}\n`;
-                frontmatter += `content_type: ${contentType}\n`;
+                frontmatter += `name: "${safeSkillName}"\n`;
+                frontmatter += `domain: "${domain}"\n`;
+                frontmatter += `content_type: "${contentType}"\n`;
                 frontmatter += `use_cases:\n`;
                 useCases.forEach(uc => {
-                  frontmatter += `  - ${uc}\n`;
+                  frontmatter += `  - "${uc}"\n`;
                 });
                 frontmatter += `---`;
 
-                // Puraane YAML ko file se hata dete hain
+                // Remove the old YAML from the AI text
                 let body = cleanContent;
                 const yamlRegex = /---\n[\s\S]*?\n---/;
                 const oldYamlMatch = cleanContent.match(yamlRegex);
