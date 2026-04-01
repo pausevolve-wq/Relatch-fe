@@ -44,7 +44,7 @@ interface GeneratedSkill {
 
 import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
-  ChevronRight, Zap, FileText, Shield, X, Code, Database,
+  ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info
 } from 'lucide-react';
@@ -543,6 +543,13 @@ function detectSkillDomain(fileName: string, text: string) {
   return scores[0]?.domain ?? null;
 }
 
+function sanitizeYamlValue(val: string): string {
+  if (/[&:#|>!?*{}[\],@`]/.test(val) || val.includes('"')) {
+    return '"' + val.replace(/"/g, '\\"') + '"';
+  }
+  return val;
+}
+
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
   const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 8);
   const fullText = lines.join(' ');
@@ -582,21 +589,21 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
   );
 
   const ruleLines = lines
-  .filter(l => {
-    if (l.length <= 20 || l.length >= 160) return false;
-    if (/^(http|www|@|\d{4})/.test(l)) return false;
-    if (/^subject.?line/i.test(l)) return false;
-    if (/email\s*#\d/i.test(l)) return false;
-    if (/^\d+\s*emails?[;,]/i.test(l)) return false;
-    if (/\[name\]/i.test(l)) return false;
-    if (/^(ps:|p\.s\.|p\.s:)/i.test(l)) return false;
-    const hasInstruction = /\b(always|never|write|use|make|keep|lead|start|end|ensure|avoid|focus|apply|send|create|build|design|follow|check|avoid)\b/i.test(l);
-    const hasBullet = /^[-•*]/.test(l);
-    const hasColon = l.includes(':') && l.indexOf(':') > 8;
-    return hasInstruction || hasBullet || hasColon;
-  })
-  .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
-  .filter(l => l.length > 15);
+    .filter(l => {
+      if (l.length <= 20 || l.length >= 160) return false;
+      if (/^(http|www|@|\d{4})/.test(l)) return false;
+      if (/^subject.?line/i.test(l)) return false;
+      if (/email\s*#\d/i.test(l)) return false;
+      if (/^\d+\s*emails?[;,]/i.test(l)) return false;
+      if (/\[name\]/i.test(l)) return false;
+      if (/^(ps:|p\.s\.|p\.s:)/i.test(l)) return false;
+      const hasInstruction = /\b(always|never|write|use|make|keep|lead|start|end|ensure|avoid|focus|apply|send|create|build|design|follow|check)\b/i.test(l);
+      const hasBullet = /^[-•*]/.test(l);
+      const hasColon = l.includes(':') && l.indexOf(':') > 8;
+      return hasInstruction || hasBullet || hasColon;
+    })
+    .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
+    .filter(l => l.length > 15);
 
   // ── Build each section ────────────────────────────────────────────
   const principleSource = [...ruleLines, ...sentences].slice(0, 10);
@@ -654,7 +661,7 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
   const useCases = domainWords.slice(0, 3).join(', ') || 'maintain consistency, apply domain patterns, produce accurate outputs';
 
   return `---
-domain: ${domain}
+domain: ${sanitizeYamlValue(domain)}
 content_type: behavioral skill
 use_cases: [${useCases}]
 ---
@@ -1247,34 +1254,33 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       try {
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
-  .filter(f => config.categories[f.category]?.enabled)
-  .map(f => {
-    const injectCustomNotes = (content: string, notes: string): string => {
-      if (!notes.trim()) return content;
-      const frontmatterMatch = content.match(/^(---[\s\S]*?---\n)/);
-      if (frontmatterMatch) {
-        const frontmatter = frontmatterMatch[1];
-        const body = content.slice(frontmatter.length);
-        return frontmatter
-          + '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
-          + notes.trim()
-          + '\n\n---\n\n'
-          + body;
-      }
-      return '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
-        + notes.trim()
-        + '\n\n---\n\n'
-        + content;
-    };
-
-    const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
-    return {
-      filename: `${slug}-${f.category}.md`,
-      content: finalContent,
-      category: f.category,
-      tokenEstimate: estimateTokens(finalContent),
-    };
-  });
+          .filter(f => config.categories[f.category]?.enabled)
+          .map(f => {
+            const injectCustomNotes = (content: string, notes: string): string => {
+              if (!notes.trim()) return content;
+              const frontmatterMatch = content.match(/^(---[\s\S]*?---\n)/);
+              if (frontmatterMatch) {
+                const frontmatter = frontmatterMatch[1];
+                const body = content.slice(frontmatter.length);
+                return frontmatter
+                  + '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
+                  + notes.trim()
+                  + '\n\n'
+                  + body;
+              }
+              return '## Custom Instructions\n\n> These instructions take highest priority.\n\n'
+                + notes.trim()
+                + '\n\n'
+                + content;
+            };
+            const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
+            return {
+              filename: `${slug}-${f.category}.md`,
+              content: finalContent,
+              category: f.category,
+              tokenEstimate: estimateTokens(finalContent),
+            };
+          });
         if (!cancelled) setGeneratedFiles(results);
       } catch (err) {
         if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
