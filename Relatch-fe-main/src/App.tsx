@@ -1288,41 +1288,60 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
         const results: GeneratedSkill[] = files
           .filter(f => config.categories[f.category]?.enabled)
           .map(f => {
-           const injectCustomNotes = (content: string, notes: string): string => {
-                const cleanContent = content.trim();
+          const injectCustomNotes = (content: string, notes: string): string => {
+                let cleanContent = content.replace(/\r/g, '').trim();
+                cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-                // Look for content between two sets of --- (No ^ anchor so it ignores preambles)
-                const yamlRegex = /---\n([\s\S]*?)\n---/;
-                const match = cleanContent.match(yamlRegex);
+                // Values extract karte hain
+                const domainMatch = cleanContent.match(/domain:\s*"?([^"\n]+)"?/);
+                const domain = domainMatch ? domainMatch[1].trim() : "General";
 
-                let frontmatter = '';
-                let body = cleanContent;
+                const typeMatch = cleanContent.match(/content_type:\s*"?([^"\n]+)"?/);
+                const contentType = typeMatch ? typeMatch[1].trim() : "behavioral skill";
 
-                if (match) {
-                  // Reconstruct the frontmatter perfectly, deleting ANY preamble before it
-                  frontmatter = `---\n${match[1].trim()}\n---`;
-                  // Keep only the text that comes AFTER the YAML block
-                  const splitParts = cleanContent.split(match[0]);
-                  body = (splitParts[1] || '').trimStart();
-                } else {
-                  // NUCLEAR FALLBACK: If the AI forgets the YAML entirely,
-                  // inject a default block so Claude never throws an error.
-                  frontmatter = `---\ndomain: "General"\ncontent_type: "behavioral skill"\nuse_cases: ["Professional Communication"]\n---`;
-                  // Treat the entire AI response as the body
-                  body = cleanContent; 
+                // use_cases ko nikal kar strict bullet format banayenge
+                let useCases: string[] = ["Professional Communication"];
+                const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
+                
+                if (useCasesMatch) {
+                  const rawCases = useCasesMatch[1];
+                  if (rawCases.startsWith('[')) {
+                    // Inline array ko split karna
+                    useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+                  } else {
+                    // Bullets ko split karna
+                    useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+                  }
                 }
 
-                // Force the YAML to be the absolute first thing in the file
+                // AI formatting bhool jao, naya 100% secure YAML banate hain
+                let frontmatter = `---\n`;
+                frontmatter += `domain: ${domain}\n`;
+                frontmatter += `content_type: ${contentType}\n`;
+                frontmatter += `use_cases:\n`;
+                useCases.forEach(uc => {
+                  frontmatter += `  - ${uc}\n`;
+                });
+                frontmatter += `---`;
+
+                // Puraane YAML ko file se hata dete hain
+                let body = cleanContent;
+                const yamlRegex = /---\n[\s\S]*?\n---/;
+                const oldYamlMatch = cleanContent.match(yamlRegex);
+                if (oldYamlMatch) {
+                  body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
+                }
+
+                // Final file setup
                 let finalOutput = frontmatter + '\n\n';
 
-                // Inject custom notes if the user typed them
                 if (notes && notes.trim()) {
                   finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
                 }
 
-                // Add the rest of the AI-generated skill content
                 finalOutput += body;
-                return finalOutput;
+                
+                return finalOutput.trim();
               };
             const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
             return {
@@ -1355,8 +1374,9 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     setCopied(id); setTimeout(() => setCopied(null), 2500);
   };
 
-  const handleDownloadSingle = (skill: GeneratedSkill) => {
-    const blob = new Blob([skill.content], { type: 'text/markdown' });
+ const handleDownloadSingle = (skill: GeneratedSkill) => {
+    // UTF-8 charset add kiya hai
+    const blob = new Blob([skill.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = skill.filename; a.click(); URL.revokeObjectURL(url);
   };
