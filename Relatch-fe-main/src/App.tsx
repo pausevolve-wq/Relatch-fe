@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import * as pdfjsLib from "pdfjs-dist";
 
-// Configure PDF.js worker (required for pdfjs-dist v4+)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Use unpkg for more reliable .mjs worker delivery in v4+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 // ─── TYPES ───────────────────────────────────────────────────────────
 type FileCategory = 'personality' | 'knowledge' | 'instructions' | 'examples' | 'context' | 'preferences';
@@ -264,7 +264,8 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   // Step 1: Try pdfjs (works for text-based PDFs, fast, no API call)
   try {
     const buffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    // Wrap the buffer in a Uint8Array for v4+ compatibility
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
     let fullText = '';
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -329,12 +330,14 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     const text = lines.join('\n');
     if (text.trim().length > 0) return { type: 'docx', text: stripArtifacts(text), warnings };
   } catch (err) {
-    warnings.push('DOCX parser failed; using plain-text fallback.');
+    warnings.push('DOCX structure is complex — attempting secondary extraction.');
     try {
       const fallbackBuffer = await readAsArrayBuffer(file);
-      // Use stripXmlArtifacts instead of stripArtifacts for binary DOCX fallback
-      const fallback = stripXmlArtifacts(decodeArrayBuffer(fallbackBuffer, 'latin1'));
-      if (fallback.length > 50) return { type: 'docx', text: fallback, warnings };
+      // Ensure we treat it as a typed array before decoding
+      const fallback = stripXmlArtifacts(decodeArrayBuffer(new Uint8Array(fallbackBuffer), 'utf-8'));
+      if (fallback.length > 100 && !fallback.includes('PK\u0003\u0004')) { 
+        return { type: 'docx', text: fallback, warnings };
+      }
     } catch {
       // ignore
     }
