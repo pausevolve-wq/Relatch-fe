@@ -710,10 +710,19 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
   }
 
   try {
+    const detectedDomain = detectSkillDomain(fileName, rawText);
+    
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rawText, category, fileName }),
+      body: JSON.stringify({ 
+        rawText, 
+        category, 
+        fileName,
+        domainLabel: detectedDomain?.label || 'general professional',
+        domainRole: detectedDomain?.role || 'an expert',
+        domainFrame: detectedDomain?.frame || 'communicate effectively'
+      }),
     });
 
     if (response.status === 422) {
