@@ -1235,11 +1235,13 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 let cleanContent = content.replace(/\r/g, '').trim();
                 cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-                const domainMatch = cleanContent.match(/domain:\s*"?([^"\n]+)"?/);
-                const domain = domainMatch ? domainMatch[1].trim() : "General";
+               const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
+        let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : "General";
+        if (!domain) domain = "General";
 
-                const typeMatch = cleanContent.match(/content_type:\s*"?([^"\n]+)"?/);
-                const contentType = typeMatch ? typeMatch[1].trim() : "behavioral skill";
+        const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
+        let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : "behavioral skill";
+        if (!contentType) contentType = "behavioral skill";
 
                 let useCases: string[] = ["Professional Communication"];
                 const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
