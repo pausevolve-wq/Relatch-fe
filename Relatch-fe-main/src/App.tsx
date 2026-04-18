@@ -515,7 +515,12 @@ function detectSkillDomain(fileName: string, text: string) {
     domain: d,
     score: (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length,
   })).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
-  return scores[0]?.domain ?? null;
+  
+  const THRESHOLD = 5;
+  if (scores.length > 0 && scores[0].score >= THRESHOLD) {
+    return scores[0].domain;
+  }
+  return null;
 }
 
 function sanitizeYamlValue(val: string): string {
