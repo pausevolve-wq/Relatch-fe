@@ -522,7 +522,6 @@ function detectSkillDomain(fileName: string, text: string) {
   }
   return null;
 }
-
 function sanitizeYamlValue(val: string): string {
   if (/[&:#|>!?*{}[\],@`]/.test(val) || val.includes('"')) {
     return '"' + val.replace(/"/g, '\\"') + '"';
@@ -938,7 +937,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.04] via-transparent to-blue-600/[0.02]" />
           </div>
           <input id="file-input" type="file" multiple accept=".txt,.md,.pdf,.doc,.docx,.html,.htm,.xml,.json,.yaml,.yml,.csv,.toml,.js,.ts,.py,.rb,.go,.rs,.log" className="hidden" onChange={(e) => e.target.files && handleFiles(e.target.files)} />
-          <div className="relative z-10">
+          <div className={`relative z-10 transition-all duration-500 ${isProcessing ? 'blur-md' : 'blur-0'}`}>
             <div className={`w-14 h-14 mx-auto mb-5 rounded-2xl flex items-center justify-center transition-all duration-500 ${isDragging ? 'bg-blue-500/20 scale-110 rotate-6' : 'bg-white/[0.04] border border-white/[0.06] group-hover:bg-white/[0.06]'}`}>
               <Upload className={`w-6 h-6 transition-all duration-300 ${isDragging ? 'text-blue-400' : 'text-gray-500 group-hover:text-gray-300'}`} />
             </div>
