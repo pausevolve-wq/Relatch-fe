@@ -473,7 +473,7 @@ const SKILL_DOMAINS = [
     role: 'a social media strategist and content creator',
     outputType: 'social content, captions, and community strategies',
     frame: 'create social content that builds community and drives engagement',
-    keywords: /\b(instagram|tiktok|linkedin.?post|twitter|youtube|hashtag|caption|reel|story|carousel|content.?calendar|ugc|creator.?economy|influencer|viral.?content|community.?management|engagement.?rate)\b/i,
+    keywords: /\b(instagram|tiktok|linkedin.?post|twitter|youtube|hashtag|caption|reel|carousel|content.?calendar|ugc|creator.?economy|influencer|viral.?content|community.?management|engagement.?rate)\b/i,
   },
   {
     id: 'healthcare',
