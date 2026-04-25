@@ -76,33 +76,6 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function detectEnhancementSignals(text: string) {
-  const sample = text.toLowerCase();
-
-  const hasNumbers = /\d/.test(sample);
-  const hasSteps = /(step|process|workflow|first|then|next)/.test(sample);
-  const hasStructuredHints = /(:|-|\*)/.test(sample);
-  const hasTechnical = /(function|return|class|api|json|code)/.test(sample);
-  const hasComparison = /(vs|compare|difference|better|worse)/.test(sample);
-
-  const length = text.length;
-
-  return {
-    allowTables: hasComparison || (hasNumbers && hasSteps && length > 900),
-    allowCodeBlocks: hasTechnical && length > 500,
-    allowFlow: hasSteps && length > 400,
-  };
-}
-
-function detectComplexity(text: string): 'light' | 'medium' | 'heavy' {
-  const length = text.length;
-  const tokens = estimateTokens(text);
-
-  if (tokens > 4000 || length > 15000) return 'heavy';
-  if (tokens > 1500 || length > 6000) return 'medium';
-  return 'light';
-}
-
 type NormalizedFileType = 'pdf' | 'docx' | 'txt' | 'html' | 'unknown';
 
 interface ExtractedTextResult {
@@ -538,29 +511,15 @@ const SKILL_DOMAINS = [
 
 function detectSkillDomain(fileName: string, text: string) {
   const combined = (fileName + ' ' + text).toLowerCase();
-
-  const scores = SKILL_DOMAINS.map(d => {
-  const regex = new RegExp(d.keywords.source, 'gi');
-  const matches = combined.match(regex);
-  return {
+  const scores = SKILL_DOMAINS.map(d => ({
     domain: d,
-    score: matches ? matches.length : 0,
-  };
-})
-    .filter(r => r.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  if (scores.length === 0) return null;
-
-  const top = scores[0];
-  const second = scores[1];
-
-  if (top.score >= 2) return top.domain;
-
-  if (top.score === 1 && !second) return top.domain;
-
-  if (top.score === 1 && second && second.score === 1) return null;
-
+    score: (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length,
+  })).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
+  
+  const THRESHOLD = 5;
+  if (scores.length > 0 && scores[0].score >= THRESHOLD) {
+    return scores[0].domain;
+  }
   return null;
 }
 function sanitizeYamlValue(val: string): string {
@@ -573,11 +532,6 @@ function sanitizeYamlValue(val: string): string {
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
   const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 8);
   const fullText = lines.join(' ');
-  const fallbackSkillName = fileName
-    .replace(/\.[^/.]+$/, '')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim() || 'Untitled Skill';
 
   const detected = detectSkillDomain(fileName, rawText);
   const domain     = detected?.label      ?? 'professional communication';
@@ -683,7 +637,6 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
     : 'consistency, patterns, accuracy');
 
   return `---
-name: ${sanitizeYamlValue(fallbackSkillName)}
 domain: ${sanitizeYamlValue(domain)}
 content_type: behavioral skill
 use_cases: [${sanitizedUseCases}]
@@ -1275,106 +1228,74 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
 
   useEffect(() => {
     let cancelled = false;
-
-    // ── Helpers lifted out of map so they don't re-define on every iteration ──
-
-    function injectIntoSection(content: string, section: string, block: string): string {
-      if (!content.includes(section)) return content;
-      const parts = content.split(section);
-      if (parts.length < 2) return content;
-      const before = parts[0];
-      const after = parts.slice(1).join(section);
-      return `${before}${section}\n\n${block}\n${after}`;
-    }
-
-    function injectCustomNotes(content: string, notes: string): string {
-      let cleanContent = content.replace(/\r/g, '').trim();
-      cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
-      const customNotes = notes?.trim();
-
-      const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
-      let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'General';
-      if (!domain) domain = 'General';
-
-      const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
-      let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'behavioral skill';
-      if (!contentType) contentType = 'behavioral skill';
-
-      let useCases: string[] = ['Professional Communication'];
-      const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
-      if (useCasesMatch) {
-        const rawCases = useCasesMatch[1];
-        if (rawCases.startsWith('[')) {
-          useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
-        } else {
-          useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
-        }
-      }
-
-      const safeSkillName = config.skillName ? config.skillName.replace(/"/g, '') : 'My Custom Skill';
-      let frontmatter = `---\nname: "${safeSkillName}"\ndomain: "${domain}"\ncontent_type: "${contentType}"\nuse_cases:\n`;
-      useCases.forEach(uc => { frontmatter += `  - "${uc}"\n`; });
-      frontmatter += `---`;
-
-      let body = cleanContent;
-      const oldYamlMatch = cleanContent.match(/---\n[\s\S]*?\n---/);
-      if (oldYamlMatch) {
-        body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
-      }
-
-      let finalOutput = frontmatter + '\n\n';
-
-if (customNotes) {
-  finalOutput += `## Custom Instructions\n${customNotes}\n\n`;
-}
-
-finalOutput += body;
-
-return finalOutput.trim();
-
-    function applyEnhancements(rawContent: string): string {
-      const signals = detectEnhancementSignals(rawContent);
-      const complexity = detectComplexity(rawContent);
-      let enhanced = rawContent;
-
-      if (complexity !== 'light') {
-        if (signals.allowTables && !enhanced.includes('### Structured View')) {
-          enhanced = injectIntoSection(enhanced, '## How to Create',
-            `### Structured View\n| Element | Description |\n|--------|-------------|\n| Input | Derived from source |\n| Output | Pattern-aligned result |`);
-        }
-        if (signals.allowCodeBlocks && !enhanced.includes('### Code Pattern')) {
-          enhanced = injectIntoSection(enhanced, '## How to Create',
-            "### Code Pattern\n```\nfunction pattern() {\n  return \"structured output\";\n}\n```");
-        }
-        if (signals.allowFlow && !enhanced.includes('### Execution Flow')) {
-          enhanced = injectIntoSection(enhanced, '## How to Think',
-            `### Execution Flow\n1. Identify intent\n2. Apply pattern\n3. Structure output\n4. Refine precision`);
-        }
-      }
-      return enhanced;
-    }
-
     async function generate() {
       setIsGenerating(true); setGenerationError(null); setLoadingMsgIndex(0);
       try {
         const slug = toSkillSlug(config.skillName);
-        const enabledFiles = files.filter(f => config.categories[f.category]?.enabled);
+        const results: GeneratedSkill[] = files
+          .filter(f => config.categories[f.category]?.enabled)
+          .map(f => {
+          const injectCustomNotes = (content: string, notes: string): string => {
+                let cleanContent = content.replace(/\r/g, '').trim();
+                cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-        const results: GeneratedSkill[] = await Promise.all(
-          enabledFiles.map(async (f) => {
-            // ── Try enrich API first ──────────────────────────────────────────
-            const baseContent = applyEnhancements(f.content);
-            const finalContent = injectCustomNotes(baseContent, config.customNotes ?? '');
+               const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
+        let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : "General";
+        if (!domain) domain = "General";
 
+        const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
+        let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : "behavioral skill";
+        if (!contentType) contentType = "behavioral skill";
+
+                let useCases: string[] = ["Professional Communication"];
+                const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
+                
+                if (useCasesMatch) {
+                  const rawCases = useCasesMatch[1];
+                  if (rawCases.startsWith('[')) {
+                    useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+                  } else {
+                    useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+                  }
+                }
+
+                const safeSkillName = config.skillName ? config.skillName.replace(/"/g, '') : "My Custom Skill";
+
+                let frontmatter = `---\n`;
+                frontmatter += `name: "${safeSkillName}"\n`;
+                frontmatter += `domain: "${domain}"\n`;
+                frontmatter += `content_type: "${contentType}"\n`;
+                frontmatter += `use_cases:\n`;
+                useCases.forEach(uc => {
+                  frontmatter += `  - "${uc}"\n`;
+                });
+                frontmatter += `---`;
+
+                let body = cleanContent;
+                const yamlRegex = /---\n[\s\S]*?\n---/;
+                const oldYamlMatch = cleanContent.match(yamlRegex);
+                if (oldYamlMatch) {
+                  body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
+                }
+
+                let finalOutput = frontmatter + '\n\n';
+
+                if (notes && notes.trim()) {
+                  finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
+                }
+
+                finalOutput += body;
+                
+                return finalOutput.trim();
+              };
+            const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
             return {
               filename: `${slug}-${f.category}.md`,
               content: finalContent,
               category: f.category,
               tokenEstimate: estimateTokens(finalContent),
             };
-          })
-        );
-
+          });
         if (!cancelled) setGeneratedFiles(results);
       } catch (err) {
         if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
