@@ -1371,11 +1371,11 @@ if (complexity !== 'light') {
       enhancedContent,
       '## How to Create',
       `### Code Pattern
-\`\`\`
+\\\`\\\`\\\`
 function pattern() {
   return "structured output";
 }
-\`\`\``
+\\\`\\\`\\\``
     );
   }
 
