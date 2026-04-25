@@ -339,7 +339,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     try {
       const fallbackBuffer = await readAsArrayBuffer(file);
       const fallback = stripXmlArtifacts(decodeArrayBuffer(new Uint8Array(fallbackBuffer), 'utf-8'));
-      if (fallback.length > 100 && !fallback.includes('PK\u0003\u0004')) { 
+      if (fallback.length > 100 && !fallback.includes('PK\u0003\u0004')) {
         return { type: 'docx', text: fallback, warnings };
       }
     } catch {
@@ -540,13 +540,13 @@ function detectSkillDomain(fileName: string, text: string) {
   const combined = (fileName + ' ' + text).toLowerCase();
 
   const scores = SKILL_DOMAINS.map(d => {
-  const regex = new RegExp(d.keywords.source, 'gi');
-  const matches = combined.match(regex);
-  return {
-    domain: d,
-    score: matches ? matches.length : 0,
-  };
-})
+    const regex = new RegExp(d.keywords.source, 'gi');
+    const matches = combined.match(regex);
+    return {
+      domain: d,
+      score: matches ? matches.length : 0,
+    };
+  })
     .filter(r => r.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -563,6 +563,7 @@ function detectSkillDomain(fileName: string, text: string) {
 
   return null;
 }
+
 function sanitizeYamlValue(val: string): string {
   if (/[&:#|>!?*{}[\],@`]/.test(val) || val.includes('"')) {
     return '"' + val.replace(/"/g, '\\"') + '"';
@@ -756,13 +757,13 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
 
   try {
     const detectedDomain = detectSkillDomain(fileName, rawText);
-    
+
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        rawText, 
-        category, 
+      body: JSON.stringify({
+        rawText,
+        category,
         fileName,
         domainLabel: detectedDomain?.label || 'general professional',
         domainRole: detectedDomain?.role || 'an expert',
@@ -790,7 +791,6 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
 }
 
 async function parseFile(file: File): Promise<UploadedFile> {
-  const traceId = `ingest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const precheck = validateInputFile(file);
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
 
@@ -1244,6 +1244,105 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
   );
 }
 
+// ---------------------------------------------------------------------------
+// Helper: inject custom notes into enriched skill content
+// ---------------------------------------------------------------------------
+function injectCustomNotes(content: string, notes: string): string {
+  let cleanContent = content.replace(/\r/g, '').trim();
+  cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
+
+  const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
+  let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'General';
+  if (!domain) domain = 'General';
+
+  const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
+  let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'behavioral skill';
+  if (!contentType) contentType = 'behavioral skill';
+
+  let useCases: string[] = ['Professional Communication'];
+  const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
+  if (useCasesMatch) {
+    const rawCases = useCasesMatch[1];
+    if (rawCases.startsWith('[')) {
+      useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+    }
+  }
+
+  const safeSkillName = '';  // not available here; will be set in caller if needed
+
+  let frontmatter = `---\n`;
+  frontmatter += `domain: "${domain}"\n`;
+  frontmatter += `content_type: "${contentType}"\n`;
+  frontmatter += `use_cases:\n`;
+  useCases.forEach(uc => {
+    frontmatter += `  - "${uc}"\n`;
+  });
+  frontmatter += `---`;
+
+  let body = cleanContent;
+  const yamlRegex = /---\n[\s\S]*?\n---/;
+  const oldYamlMatch = cleanContent.match(yamlRegex);
+  if (oldYamlMatch) {
+    body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
+  }
+
+  let finalOutput = frontmatter + '\n\n';
+
+  if (notes && notes.trim()) {
+    finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
+  }
+
+  finalOutput += body;
+
+  return finalOutput.trim();
+}
+
+// ---------------------------------------------------------------------------
+// Helper: inject section blocks for medium/heavy complexity content
+// ---------------------------------------------------------------------------
+function injectIntoSection(content: string, section: string, block: string): string {
+  if (!content.includes(section)) return content;
+  const parts = content.split(section);
+  if (parts.length < 2) return content;
+  const before = parts[0];
+  const after = parts.slice(1).join(section);
+  return `${before}${section}\n\n${block}\n${after}`;
+}
+
+function applyEnhancements(content: string, signals: ReturnType<typeof detectEnhancementSignals>, complexity: ReturnType<typeof detectComplexity>): string {
+  let enhanced = content;
+
+  if (complexity === 'light') return enhanced;
+
+  if (signals.allowTables && !enhanced.includes('### Structured View')) {
+    enhanced = injectIntoSection(
+      enhanced,
+      '## How to Create',
+      `### Structured View\n| Element | Description |\n|--------|-------------|\n| Input | Derived from source |\n| Output | Pattern-aligned result |`
+    );
+  }
+
+  if (signals.allowCodeBlocks && !enhanced.includes('### Code Pattern')) {
+    enhanced = injectIntoSection(
+      enhanced,
+      '## How to Create',
+      `### Code Pattern\n\`\`\`\nfunction pattern() {\n  return "structured output";\n}\n\`\`\``
+    );
+  }
+
+  if (signals.allowFlow && !enhanced.includes('### Execution Flow')) {
+    enhanced = injectIntoSection(
+      enhanced,
+      '## How to Think',
+      `### Execution Flow\n1. Identify intent\n2. Apply pattern\n3. Structure output\n4. Refine precision`
+    );
+  }
+
+  return enhanced;
+}
+
 function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillConfig }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [activeFile, setActiveFile] = useState(0);
@@ -1269,125 +1368,71 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
 
   useEffect(() => {
     let cancelled = false;
+
     async function generate() {
-      setIsGenerating(true); setGenerationError(null); setLoadingMsgIndex(0);
+      setIsGenerating(true);
+      setGenerationError(null);
+      setLoadingMsgIndex(0);
+
       try {
         const slug = toSkillSlug(config.skillName);
+
         const results: GeneratedSkill[] = files
           .filter(f => config.categories[f.category]?.enabled)
           .map(f => {
-          const injectCustomNotes = (content: string, notes: string): string => {
-                let cleanContent = content.replace(/\r/g, '').trim();
-                cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
-
-               const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
-        let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : "General";
-        if (!domain) domain = "General";
-
-        const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
-        let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : "behavioral skill";
-        if (!contentType) contentType = "behavioral skill";
-
-                let useCases: string[] = ["Professional Communication"];
-                const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
-                
-                if (useCasesMatch) {
-                  const rawCases = useCasesMatch[1];
-                  if (rawCases.startsWith('[')) {
-                    useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
-                  } else {
-                    useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
-                  }
-                }
-
-                const safeSkillName = config.skillName ? config.skillName.replace(/"/g, '') : "My Custom Skill";
-
-                let frontmatter = `---\n`;
-                frontmatter += `name: "${safeSkillName}"\n`;
-                frontmatter += `domain: "${domain}"\n`;
-                frontmatter += `content_type: "${contentType}"\n`;
-                frontmatter += `use_cases:\n`;
-                useCases.forEach(uc => {
-                  frontmatter += `  - "${uc}"\n`;
-                });
-                frontmatter += `---`;
-
-                let body = cleanContent;
-                const yamlRegex = /---\n[\s\S]*?\n---/;
-                const oldYamlMatch = cleanContent.match(yamlRegex);
-                if (oldYamlMatch) {
-                  body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
-                }
-
-                let finalOutput = frontmatter + '\n\n';
-
-                if (notes && notes.trim()) {
-                  finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
-                }
-
-                finalOutput += body;
-                
-                return finalOutput.trim();
-              };
             const signals = detectEnhancementSignals(f.content);
-const complexity = detectComplexity(f.content);
+            const complexity = detectComplexity(f.content);
+            const enhanced = applyEnhancements(f.content, signals, complexity);
 
-let enhancedContent = f.content;
+            // Build frontmatter with skill name included
+            let cleanContent = enhanced.replace(/\r/g, '').trim();
+            cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-if (complexity !== 'light') {
-  const hasCreateSection = enhancedContent.includes('## How to Create');
-  const hasThinkSection = enhancedContent.includes('## How to Think');
+            const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
+            let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'General';
+            if (!domain) domain = 'General';
 
-  let createInsert = '';
-  let thinkInsert = '';
+            const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
+            let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'behavioral skill';
+            if (!contentType) contentType = 'behavioral skill';
 
-  function injectIntoSection(content: string, section: string, block: string) {
-  if (!content.includes(section)) return content;
+            let useCases: string[] = ['Professional Communication'];
+            const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
+            if (useCasesMatch) {
+              const rawCases = useCasesMatch[1];
+              if (rawCases.startsWith('[')) {
+                useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+              } else {
+                useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+              }
+            }
 
-  const parts = content.split(section);
-  if (parts.length < 2) return content;
+            const safeSkillName = config.skillName ? config.skillName.replace(/"/g, '') : 'My Custom Skill';
 
-  const before = parts[0];
-  const after = parts.slice(1).join(section);
+            let frontmatter = `---\n`;
+            frontmatter += `name: "${safeSkillName}"\n`;
+            frontmatter += `domain: "${domain}"\n`;
+            frontmatter += `content_type: "${contentType}"\n`;
+            frontmatter += `use_cases:\n`;
+            useCases.forEach(uc => {
+              frontmatter += `  - "${uc}"\n`;
+            });
+            frontmatter += `---`;
 
-  return `${before}${section}\n\n${block}\n${after}`;
-}
+            let body = cleanContent;
+            const yamlRegex = /---\n[\s\S]*?\n---/;
+            const oldYamlMatch = cleanContent.match(yamlRegex);
+            if (oldYamlMatch) {
+              body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
+            }
 
-if (complexity !== 'light') {
-  if (signals.allowTables && !enhancedContent.includes('### Structured View')) {
-    enhancedContent = injectIntoSection(
-      enhancedContent,
-      '## How to Create',
-      `### Structured View
-| Element | Description |
-|--------|-------------|
-| Input | Derived from source |
-| Output | Pattern-aligned result |`
-    );
-  }
+            let finalContent = frontmatter + '\n\n';
+            if (config.customNotes && config.customNotes.trim()) {
+              finalContent += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + config.customNotes.trim() + '\n\n';
+            }
+            finalContent += body;
+            finalContent = finalContent.trim();
 
-  if (signals.allowCodeBlocks && !enhancedContent.includes('### Code Pattern')) {
-    enhancedContent = injectIntoSection(
-  enhancedContent,
-  '## How to Create',
-  "### Code Pattern\n```javascript\nfunction pattern() {\n  return \"structured output\";\n}\n```"
-);
-  }
-
-  if (signals.allowFlow && !enhancedContent.includes('### Execution Flow')) {
-    enhancedContent = injectIntoSection(
-      enhancedContent,
-      '## How to Think',
-      `### Execution Flow
-1. Identify intent
-2. Apply pattern
-3. Structure output
-4. Refine precision`
-    );
-  }
-}
-
-const finalContent = injectCustomNotes(enhancedContent, config.customNotes ?? '');
             return {
               filename: `${slug}-${f.category}.md`,
               content: finalContent,
@@ -1395,6 +1440,7 @@ const finalContent = injectCustomNotes(enhancedContent, config.customNotes ?? ''
               tokenEstimate: estimateTokens(finalContent),
             };
           });
+
         if (!cancelled) setGeneratedFiles(results);
       } catch (err) {
         if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
@@ -1402,6 +1448,7 @@ const finalContent = injectCustomNotes(enhancedContent, config.customNotes ?? ''
         if (!cancelled) setIsGenerating(false);
       }
     }
+
     generate();
     return () => { cancelled = true; };
   }, [files, config]);
@@ -1418,7 +1465,7 @@ const finalContent = injectCustomNotes(enhancedContent, config.customNotes ?? ''
     setCopied(id); setTimeout(() => setCopied(null), 2500);
   };
 
- const handleDownloadSingle = (skill: GeneratedSkill) => {
+  const handleDownloadSingle = (skill: GeneratedSkill) => {
     const blob = new Blob([skill.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = skill.filename; a.click(); URL.revokeObjectURL(url);
@@ -1509,131 +1556,131 @@ const finalContent = injectCustomNotes(enhancedContent, config.customNotes ?? ''
           </div>
         </AnimatedSection>
       )}
-      {!isGenerating && generatedFiles && (<>
-      <AnimatedSection>
-        <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
-          <p className="text-[11px] text-gray-500 mb-3">The full Relatch app connects directly to Claude — no files, no drag & drop. Join the waitlist for early access.</p>
-          {waitlistSuccess ? (
-            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
-          ) : (
-            <form onSubmit={handleWaitlistSubmit} className="space-y-2.5">
-              <div className="flex gap-2">
-                <input type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} placeholder="you@company.com" className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none" />
-                <button type="submit" disabled={waitlistSubmitting} className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>{waitlistSubmitting ? 'Joining...' : 'Join waitlist'}</button>
+      {!isGenerating && generatedFiles && (
+        <>
+          <AnimatedSection>
+            <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+              <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
+              <p className="text-[11px] text-gray-500 mb-3">The full Relatch app connects directly to Claude — no files, no drag & drop. Join the waitlist for early access.</p>
+              {waitlistSuccess ? (
+                <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
+              ) : (
+                <form onSubmit={handleWaitlistSubmit} className="space-y-2.5">
+                  <div className="flex gap-2">
+                    <input type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} placeholder="you@company.com" className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none" />
+                    <button type="submit" disabled={waitlistSubmitting} className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>{waitlistSubmitting ? 'Joining...' : 'Join waitlist'}</button>
+                  </div>
+                  <p className="text-[11px] text-gray-500">One email when we launch. That&apos;s it.</p>
+                  {waitlistError && <p className="text-[11px] text-red-300">{waitlistError}</p>}
+                </form>
+              )}
+            </div>
+          </AnimatedSection>
+          <AnimatedSection>
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
+                <div>
+                  <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
+                  <p className="text-sm text-gray-400 mt-0.5">No more rewriting prompts — Claude will follow your rules every time.</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
+                </div>
               </div>
-              <p className="text-[11px] text-gray-500">One email when we launch. That&apos;s it.</p>
-              {waitlistError && <p className="text-[11px] text-red-300">{waitlistError}</p>}
-            </form>
+              <div className="flex items-center gap-5">
+                <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Files</p><p className="text-lg font-bold text-white font-mono">{generatedFiles.length}</p></div>
+                <div className="w-px h-8 bg-white/[0.06]" />
+                <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Size</p><p className="text-lg font-bold text-blue-400">{sizeLabel}</p></div>
+                <div className="flex-1" />
+                <button onClick={handleDownloadAll} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                  <Download className="w-4 h-4" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
+                </button>
+              </div>
+            </div>
+          </AnimatedSection>
+          <AnimatedSection delay={120}>
+            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+              <h4 className="text-sm font-medium text-white mb-2">Included in this file</h4>
+              <div className="flex flex-wrap gap-2">
+                {sectionSummary.map((item) => (<span key={item.category} className="px-2.5 py-1 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-gray-300">{item.count} {item.label.toLowerCase()}</span>))}
+              </div>
+            </div>
+          </AnimatedSection>
+          {generatedFiles.length > 1 && (
+            <AnimatedSection delay={100}>
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {generatedFiles.map((file, i) => (
+                  <button key={i} onClick={() => setActiveFile(i)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${activeFile === i ? 'bg-white/[0.08] text-white border border-white/[0.1]' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03] border border-transparent'}`}>
+                    <FileText className="w-3 h-3" />{file.filename}
+                  </button>
+                ))}
+              </div>
+            </AnimatedSection>
           )}
-        </div>
-      </AnimatedSection>
-      <AnimatedSection>
-        <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
-            <div>
-              <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
-              <p className="text-sm text-gray-400 mt-0.5">
-                No more rewriting prompts — Claude will follow your rules every time.
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-5">
-            <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Files</p><p className="text-lg font-bold text-white font-mono">{generatedFiles.length}</p></div>
-            <div className="w-px h-8 bg-white/[0.06]" />
-            <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Size</p><p className="text-lg font-bold text-blue-400">{sizeLabel}</p></div>
-            <div className="flex-1" />
-            <button onClick={handleDownloadAll} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
-              <Download className="w-4 h-4" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
-            </button>
-          </div>
-        </div>
-      </AnimatedSection>
-      <AnimatedSection delay={120}>
-        <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <h4 className="text-sm font-medium text-white mb-2">Included in this file</h4>
-          <div className="flex flex-wrap gap-2">
-            {sectionSummary.map((item) => (<span key={item.category} className="px-2.5 py-1 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-gray-300">{item.count} {item.label.toLowerCase()}</span>))}
-          </div>
-        </div>
-      </AnimatedSection>
-      {generatedFiles.length > 1 && (
-        <AnimatedSection delay={100}>
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {generatedFiles.map((file, i) => (
-              <button key={i} onClick={() => setActiveFile(i)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${activeFile === i ? 'bg-white/[0.08] text-white border border-white/[0.1]' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03] border border-transparent'}`}>
-                <FileText className="w-3 h-3" />{file.filename}
-              </button>
-            ))}
-          </div>
-        </AnimatedSection>
-      )}
-      {generatedFiles.length > 0 && (
-        <AnimatedSection delay={200}>
-          <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
-              <div className="text-xs text-gray-500 font-medium">Preview</div>
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => handleCopy(generatedFiles[activeFile].content, `file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
-                  {copied === `file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>}
+          {generatedFiles.length > 0 && (
+            <AnimatedSection delay={200}>
+              <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
+                  <div className="text-xs text-gray-500 font-medium">Preview</div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => handleCopy(generatedFiles[activeFile].content, `file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                      {copied === `file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>}
+                    </button>
+                    <button onClick={() => handleCopy(generatedFiles[activeFile].content, `raw-file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                      {copied === `raw-file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Code className="w-3.5 h-3.5" /><span>Copy raw</span></>}
+                    </button>
+                    <button onClick={() => handleDownloadSingle(generatedFiles[activeFile])} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all"><Download className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+                <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">{renderMarkdownPreview(generatedFiles[activeFile].content)}</div>
+              </div>
+            </AnimatedSection>
+          )}
+          <AnimatedSection delay={300}>
+            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Package className="w-4 h-4 text-gray-400" />
+                  <div><h4 className="text-sm font-medium text-white">Paste into Claude instead</h4><p className="text-[11px] text-gray-500">Skip the file upload — copy everything and paste directly into Claude&apos;s Custom Instructions.</p></div>
+                </div>
+                <button onClick={() => handleCopy(singleFile, 'single-file')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all active:scale-[0.97] ${copied === 'single-file' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-white/[0.05] text-gray-300 border border-white/[0.08] hover:bg-white/[0.08]'}`}>
+                  {copied === 'single-file' ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy All</>}
                 </button>
-                <button onClick={() => handleCopy(generatedFiles[activeFile].content, `raw-file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
-                  {copied === `raw-file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Code className="w-3.5 h-3.5" /><span>Copy raw</span></>}
-                </button>
-                <button onClick={() => handleDownloadSingle(generatedFiles[activeFile])} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all"><Download className="w-3.5 h-3.5" /></button>
               </div>
             </div>
-            <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">{renderMarkdownPreview(generatedFiles[activeFile].content)}</div>
-          </div>
-        </AnimatedSection>
-      )}
-      <AnimatedSection delay={300}>
-        <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Package className="w-4 h-4 text-gray-400" />
-              <div><h4 className="text-sm font-medium text-white">Paste into Claude instead</h4><p className="text-[11px] text-gray-500">Skip the file upload — copy everything and paste directly into Claude&apos;s Custom Instructions.</p></div>
-            </div>
-            <button onClick={() => handleCopy(singleFile, 'single-file')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all active:scale-[0.97] ${copied === 'single-file' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-white/[0.05] text-gray-300 border border-white/[0.08] hover:bg-white/[0.08]'}`}>
-              {copied === 'single-file' ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy All</>}
-            </button>
-          </div>
-        </div>
-      </AnimatedSection>
-      <AnimatedSection delay={400}>
-        <div className="p-4 rounded-xl bg-blue-500/[0.04] border border-blue-500/10">
-          <div className="flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-medium text-blue-300 mb-1">Built for Claude&apos;s skill system</p>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                Includes YAML frontmatter, structured sections, and priority ordering — the exact format Claude&apos;s skill parser expects. Drop it in and it works.
-              </p>
-            </div>
-          </div>
-        </div>
-      </AnimatedSection>
-      <AnimatedSection delay={500}>
-        <div className="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
-          <h4 className="text-sm font-semibold text-white mb-3">How to use with Claude</h4>
-          <div className="space-y-2.5">
-            {[
-              { step: '1', text: 'Download your skill file above' },
-              { step: '2', text: 'Open claude.ai → go to any Project → Settings' },
-              { step: '3', text: 'Drag your .md file into Project Knowledge — or paste into Custom Instructions' },
-              { step: '4', text: 'Start a new chat. Claude now works exactly like you do.' },
-            ].map(item => (
-              <div key={item.step} className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
-                <p className="text-sm text-gray-400">{item.text}</p>
+          </AnimatedSection>
+          <AnimatedSection delay={400}>
+            <div className="p-4 rounded-xl bg-blue-500/[0.04] border border-blue-500/10">
+              <div className="flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium text-blue-300 mb-1">Built for Claude&apos;s skill system</p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Includes YAML frontmatter, structured sections, and priority ordering — the exact format Claude&apos;s skill parser expects. Drop it in and it works.
+                  </p>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </AnimatedSection>
-      </>)}
+            </div>
+          </AnimatedSection>
+          <AnimatedSection delay={500}>
+            <div className="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
+              <h4 className="text-sm font-semibold text-white mb-3">How to use with Claude</h4>
+              <div className="space-y-2.5">
+                {[
+                  { step: '1', text: 'Download your skill file above' },
+                  { step: '2', text: 'Open claude.ai → go to any Project → Settings' },
+                  { step: '3', text: 'Drag your .md file into Project Knowledge — or paste into Custom Instructions' },
+                  { step: '4', text: 'Start a new chat. Claude now works exactly like you do.' },
+                ].map(item => (
+                  <div key={item.step} className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                    <p className="text-sm text-gray-400">{item.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </AnimatedSection>
+        </>
+      )}
     </div>
   );
 }
@@ -1685,21 +1732,13 @@ export default function App() {
       <div className="relative z-10">
         <header className="border-b border-white/[0.05]">
           <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
-           <div className="flex items-center gap-2">
-  <img
-    src="/logo.png"
-    alt="Relatch Logo"
-    className="w-9 h-9 object-contain translate-x-[1px]"
-  />
-  <div>
-    <h1 className="text-sm font-bold text-white tracking-tight leading-none">
-      Relatch
-    </h1>
-    <p className="text-[10px] text-gray-500 leading-none mt-0.5">
-      Make Claude work like you
-    </p>
-  </div>
-</div>
+            <div className="flex items-center gap-2">
+              <img src="/logo.png" alt="Relatch Logo" className="w-9 h-9 object-contain translate-x-[1px]" />
+              <div>
+                <h1 className="text-sm font-bold text-white tracking-tight leading-none">Relatch</h1>
+                <p className="text-[10px] text-gray-500 leading-none mt-0.5">Make Claude work like you</p>
+              </div>
+            </div>
             <div className="flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]"><Shield className="w-3 h-3 text-emerald-400" /><span className="text-[10px] text-gray-400 font-medium">Files processed locally — never uploaded</span></div>
             </div>
