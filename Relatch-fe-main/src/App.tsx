@@ -76,6 +76,33 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+function detectEnhancementSignals(text: string) {
+  const sample = text.toLowerCase();
+
+  const hasNumbers = /\d/.test(sample);
+  const hasSteps = /(step|process|workflow|first|then|next)/.test(sample);
+  const hasStructuredHints = /(:|-|\*)/.test(sample);
+  const hasTechnical = /(function|return|class|api|json|code)/.test(sample);
+  const hasComparison = /(vs|compare|difference|better|worse)/.test(sample);
+
+  const length = text.length;
+
+  return {
+    allowTables: hasComparison || (hasNumbers && hasSteps && length > 900),
+    allowCodeBlocks: hasTechnical && length > 500,
+    allowFlow: hasSteps && length > 400,
+  };
+}
+
+function detectComplexity(text: string): 'light' | 'medium' | 'heavy' {
+  const length = text.length;
+  const tokens = estimateTokens(text);
+
+  if (tokens > 4000 || length > 15000) return 'heavy';
+  if (tokens > 1500 || length > 6000) return 'medium';
+  return 'light';
+}
+
 type NormalizedFileType = 'pdf' | 'docx' | 'txt' | 'html' | 'unknown';
 
 interface ExtractedTextResult {
@@ -511,15 +538,29 @@ const SKILL_DOMAINS = [
 
 function detectSkillDomain(fileName: string, text: string) {
   const combined = (fileName + ' ' + text).toLowerCase();
-  const scores = SKILL_DOMAINS.map(d => ({
+
+  const scores = SKILL_DOMAINS.map(d => {
+  const regex = new RegExp(d.keywords.source, 'gi');
+  const matches = combined.match(regex);
+  return {
     domain: d,
-    score: (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length,
-  })).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
-  
-  const THRESHOLD = 5;
-  if (scores.length > 0 && scores[0].score >= THRESHOLD) {
-    return scores[0].domain;
-  }
+    score: matches ? matches.length : 0,
+  };
+})
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (scores.length === 0) return null;
+
+  const top = scores[0];
+  const second = scores[1];
+
+  if (top.score >= 2) return top.domain;
+
+  if (top.score === 1 && !second) return top.domain;
+
+  if (top.score === 1 && second && second.score === 1) return null;
+
   return null;
 }
 function sanitizeYamlValue(val: string): string {
@@ -1288,7 +1329,70 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 
                 return finalOutput.trim();
               };
-            const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
+            const signals = detectEnhancementSignals(f.content);
+const complexity = detectComplexity(f.content);
+
+let enhancedContent = f.content;
+
+if (complexity !== 'light') {
+  const hasCreateSection = enhancedContent.includes('## How to Create');
+  const hasThinkSection = enhancedContent.includes('## How to Think');
+
+  let createInsert = '';
+  let thinkInsert = '';
+
+  function injectIntoSection(content: string, section: string, block: string) {
+  if (!content.includes(section)) return content;
+
+  const parts = content.split(section);
+  if (parts.length < 2) return content;
+
+  const before = parts[0];
+  const after = parts.slice(1).join(section);
+
+  return `${before}${section}\n\n${block}\n${after}`;
+}
+
+if (complexity !== 'light') {
+  if (signals.allowTables && !enhancedContent.includes('### Structured View')) {
+    enhancedContent = injectIntoSection(
+      enhancedContent,
+      '## How to Create',
+      `### Structured View
+| Element | Description |
+|--------|-------------|
+| Input | Derived from source |
+| Output | Pattern-aligned result |`
+    );
+  }
+
+  if (signals.allowCodeBlocks && !enhancedContent.includes('### Code Pattern')) {
+    enhancedContent = injectIntoSection(
+      enhancedContent,
+      '## How to Create',
+      `### Code Pattern
+\`\`\`
+function pattern() {
+  return "structured output";
+}
+\`\`\``
+    );
+  }
+
+  if (signals.allowFlow && !enhancedContent.includes('### Execution Flow')) {
+    enhancedContent = injectIntoSection(
+      enhancedContent,
+      '## How to Think',
+      `### Execution Flow
+1. Identify intent
+2. Apply pattern
+3. Structure output
+4. Refine precision`
+    );
+  }
+}
+
+const finalContent = injectCustomNotes(enhancedContent, config.customNotes ?? '');
             return {
               filename: `${slug}-${f.category}.md`,
               content: finalContent,
