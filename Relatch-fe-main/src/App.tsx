@@ -1290,7 +1290,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     function injectCustomNotes(content: string, notes: string): string {
       let cleanContent = content.replace(/\r/g, '').trim();
       cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
-      void notes;
+      const customNotes = notes?.trim();
 
       const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
       let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'General';
@@ -1323,9 +1323,14 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       }
 
       let finalOutput = frontmatter + '\n\n';
-      finalOutput += body;
-      return finalOutput.trim();
-    }
+
+if (customNotes) {
+  finalOutput += `## Custom Instructions\n${customNotes}\n\n`;
+}
+
+finalOutput += body;
+
+return finalOutput.trim();
 
     function applyEnhancements(rawContent: string): string {
       const signals = detectEnhancementSignals(rawContent);
