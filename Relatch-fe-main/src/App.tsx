@@ -1368,15 +1368,10 @@ if (complexity !== 'light') {
 
   if (signals.allowCodeBlocks && !enhancedContent.includes('### Code Pattern')) {
     enhancedContent = injectIntoSection(
-      enhancedContent,
-      '## How to Create',
-      `### Code Pattern
-\\\`\\\`\\\`
-function pattern() {
-  return "structured output";
-}
-\\\`\\\`\\\``
-    );
+  enhancedContent,
+  '## How to Create',
+  "### Code Pattern\n```javascript\nfunction pattern() {\n  return \"structured output\";\n}\n```"
+);
   }
 
   if (signals.allowFlow && !enhancedContent.includes('### Execution Flow')) {
