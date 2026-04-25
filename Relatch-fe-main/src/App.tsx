@@ -57,8 +57,8 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
   'Code': ['.js', '.ts', '.py', '.rb', '.go', '.rs'],
 };
 
-const OCR_PROXY_URL = 'https://claudly-proxy.vercel.app/api/ocr';
-const ENRICH_PROXY_URL = 'https://claudly-proxy.vercel.app/api/enrich';
+const OCR_PROXY_URL = '/api/ocr';
+const ENRICH_PROXY_URL = '/api/enrich';
 
 function getFileExtension(name: string): string {
   return '.' + name.split('.').pop()?.toLowerCase();
