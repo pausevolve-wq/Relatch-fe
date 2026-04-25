@@ -573,6 +573,11 @@ function sanitizeYamlValue(val: string): string {
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
   const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 8);
   const fullText = lines.join(' ');
+  const fallbackSkillName = fileName
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Untitled Skill';
 
   const detected = detectSkillDomain(fileName, rawText);
   const domain     = detected?.label      ?? 'professional communication';
@@ -678,6 +683,7 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
     : 'consistency, patterns, accuracy');
 
   return `---
+name: ${sanitizeYamlValue(fallbackSkillName)}
 domain: ${sanitizeYamlValue(domain)}
 content_type: behavioral skill
 use_cases: [${sanitizedUseCases}]
@@ -1284,6 +1290,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     function injectCustomNotes(content: string, notes: string): string {
       let cleanContent = content.replace(/\r/g, '').trim();
       cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
+      void notes;
 
       const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
       let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : 'General';
@@ -1316,9 +1323,6 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       }
 
       let finalOutput = frontmatter + '\n\n';
-      if (notes && notes.trim()) {
-        finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
-      }
       finalOutput += body;
       return finalOutput.trim();
     }
@@ -1354,32 +1358,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
         const results: GeneratedSkill[] = await Promise.all(
           enabledFiles.map(async (f) => {
             // ── Try enrich API first ──────────────────────────────────────────
-            let enrichedText = '';
-            try {
-              const resp = await fetch(ENRICH_PROXY_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  rawText: f.content,
-                  category: f.category,
-                  fileName: f.name,
-                  domainLabel: config.description || 'General',
-                  domainRole: 'an expert',
-                  domainFrame: 'communicate effectively',
-                }),
-              });
-              if (resp.ok) {
-                const data = await resp.json();
-                if (data.enriched && data.enriched.length > 200) {
-                  enrichedText = data.enriched;
-                }
-              }
-            } catch {
-              // Enrich failed — fall through to local generation
-            }
-
-            // ── Use enriched output or fall back to local enhancement ─────────
-            const baseContent = enrichedText || applyEnhancements(f.content);
+            const baseContent = applyEnhancements(f.content);
             const finalContent = injectCustomNotes(baseContent, config.customNotes ?? '');
 
             return {
