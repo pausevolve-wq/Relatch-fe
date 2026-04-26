@@ -354,6 +354,8 @@ const SKILL_DOMAINS = [
     outputType: 'emails, sequences, and outreach campaigns',
     frame: 'write emails that get opened, read, and replied to',
     keywords: /\b(subject.?line|open.?rate|click.?through|drip|sequence|outreach|followup|follow.?up|prospect|cold.?email|reply.?rate|unsubscribe|deliverability|broadcast|nurture|autoresponder|opt.?in|inbox|sender|preview.?text)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
   },
   {
     id: 'brand_voice',
@@ -362,6 +364,8 @@ const SKILL_DOMAINS = [
     outputType: 'brand copy, messaging frameworks, and content',
     frame: 'maintain a consistent, distinctive brand voice across all touchpoints',
     keywords: /\b(brand.?voice|tone.?of.?voice|brand.?guideline|messaging.?pillar|tagline|brand.?persona|style.?guide|visual.?identity|brand.?positioning|brand.?manifesto|brand.?story|typography|color.?palette|logo.?usage)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
   },
   {
     id: 'software_engineering',
@@ -370,6 +374,8 @@ const SKILL_DOMAINS = [
     outputType: 'code, architecture decisions, and technical documentation',
     frame: 'write clean, maintainable, production-ready code',
     keywords: /\b(function|async.?await|interface|component|props|useState|useEffect|endpoint|refactor|deploy|ci.?cd|unit.?test|lint|compile|algorithm|big.?o|typescript|javascript|python|react|node|kubernetes|docker|microservice)\b/i,
+    template: 'B' as const,
+    richFormats: ['codeblock', 'table', 'flowchart'],
   },
   {
     id: 'growth_marketing',
@@ -378,6 +384,8 @@ const SKILL_DOMAINS = [
     outputType: 'growth strategies, paid campaigns, and conversion systems',
     frame: 'drive measurable growth through data-informed marketing decisions',
     keywords: /\b(acquisition|retention|churn.?rate|ltv|cac|roas|a.?b.?test|landing.?page|paid.?ads|ppc|cpc|cpm|attribution|cohort|activation|referral.?program|viral.?loop|growth.?lever|north.?star.?metric|activation.?rate)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'product_design',
@@ -386,6 +394,8 @@ const SKILL_DOMAINS = [
     outputType: 'design decisions, UX flows, and interface copy',
     frame: 'create intuitive, accessible user experiences grounded in research',
     keywords: /\b(wireframe|prototype|usability.?test|heuristic|user.?journey|figma|sketch|affordance|interaction.?design|friction|empty.?state|microcopy|onboarding.?flow|accessibility|wcag|design.?system|component.?library|modal|tooltip)\b/i,
+    template: 'C' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'education',
@@ -394,6 +404,8 @@ const SKILL_DOMAINS = [
     outputType: 'curricula, lesson plans, and learning materials',
     frame: 'design learning experiences that produce measurable skill change',
     keywords: /\b(learning.?objective|curriculum|lesson.?plan|instructional|assessment|rubric|scaffold|pedagogy|student.?engagement|course.?design|syllabus|bloom.?taxonomy|formative|summative|differentiat|learning.?outcome|e.?learning)\b/i,
+    template: 'C' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'legal',
@@ -402,6 +414,8 @@ const SKILL_DOMAINS = [
     outputType: 'contracts, policies, and compliance documentation',
     frame: 'draft precise, enforceable language that protects all parties',
     keywords: /\b(clause|liability|indemnif|jurisdiction|termination|breach.?of|obligations|warranties|representation|consideration|contract|statute|regulation|compliance|gdpr|hipaa|counsel|attorney|whereas|hereinafter|pursuant)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'finance',
@@ -410,6 +424,8 @@ const SKILL_DOMAINS = [
     outputType: 'financial models, analysis, and investment recommendations',
     frame: 'produce rigorous financial analysis that supports sound decisions',
     keywords: /\b(revenue|ebitda|gross.?margin|forecast|budget.?variance|roi|irr|npv|cash.?flow|balance.?sheet|income.?statement|equity|valuation|cap.?table|runway|burn.?rate|mrr|arr|unit.?economics|waterfall)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'seo',
@@ -418,6 +434,8 @@ const SKILL_DOMAINS = [
     outputType: 'SEO strategies, content briefs, and optimized copy',
     frame: 'create content and strategies that earn search visibility and organic traffic',
     keywords: /\b(keyword.?research|search.?ranking|backlink|serp|meta.?description|title.?tag|canonical|crawl.?budget|index|schema.?markup|anchor.?text|domain.?authority|search.?intent|topical.?authority|content.?cluster|featured.?snippet|core.?web.?vital)\b/i,
+    template: 'D' as const,
+    richFormats: ['table'],
   },
   {
     id: 'hr_people',
@@ -426,6 +444,8 @@ const SKILL_DOMAINS = [
     outputType: 'HR policies, job descriptions, and people communications',
     frame: 'build people systems that attract, develop, and retain talent',
     keywords: /\b(onboarding|performance.?review|compensation.?band|benefits|pto|termination|employee.?handbook|headcount|talent.?acquisition|leveling|pip|career.?ladder|comp|total.?rewards|people.?ops|culture.?add|hiring.?manager|offer.?letter)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'data_science',
@@ -434,6 +454,8 @@ const SKILL_DOMAINS = [
     outputType: 'models, analyses, and data-driven recommendations',
     frame: 'extract signal from data and build systems that learn and improve',
     keywords: /\b(dataframe|pandas|numpy|sklearn|train.?test|accuracy|precision.?recall|feature.?engineering|regression|neural.?network|embedding|inference|dataset|etl|sql.?query|data.?warehouse|feature.?store|model.?drift|overfitting)\b/i,
+    template: 'B' as const,
+    richFormats: ['codeblock', 'table', 'flowchart'],
   },
   {
     id: 'product_management',
@@ -442,6 +464,8 @@ const SKILL_DOMAINS = [
     outputType: 'PRDs, roadmaps, and product strategy documents',
     frame: 'define and ship products that solve real user problems at scale',
     keywords: /\b(product.?requirement|user.?story|acceptance.?criteria|sprint.?planning|epic|product.?backlog|roadmap.?item|north.?star|success.?metric|discovery|product.?hypothesis|go.?to.?market|launch.?plan|prd|feature.?flag|experiment)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'pr_communications',
@@ -450,6 +474,8 @@ const SKILL_DOMAINS = [
     outputType: 'press releases, media pitches, and communications plans',
     frame: 'shape narratives and manage communications that build reputation',
     keywords: /\b(press.?release|media.?pitch|spokesperson|embargo|lede|inverted.?pyramid|boilerplate|wire.?service|newswire|journalist|media.?coverage|talking.?point|crisis.?comms|on.?the.?record|off.?the.?record|media.?list)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
   },
   {
     id: 'consulting',
@@ -458,6 +484,8 @@ const SKILL_DOMAINS = [
     outputType: 'frameworks, decks, and strategic recommendations',
     frame: 'structure ambiguous problems and deliver clear, actionable recommendations',
     keywords: /\b(mece|issue.?tree|so.?what|pyramid.?principle|workstream|deliverable|engagement.?manager|hypothesis.?driven|executive.?summary|straw.?man|benchmarking|best.?practice|operating.?model|change.?management|transformation)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'security',
@@ -466,6 +494,8 @@ const SKILL_DOMAINS = [
     outputType: 'security assessments, policies, and technical documentation',
     frame: 'identify, assess, and mitigate security risks systematically',
     keywords: /\b(vulnerability|cve|exploit|penetration.?test|pen.?test|firewall|encryption|ssl|tls|oauth|authentication|authorization|owasp|threat.?model|attack.?vector|incident.?response|soc|siem|zero.?trust|hardening|red.?team)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'social_media',
@@ -474,6 +504,8 @@ const SKILL_DOMAINS = [
     outputType: 'social content, captions, and community strategies',
     frame: 'create social content that builds community and drives engagement',
     keywords: /\b(instagram|tiktok|linkedin.?post|twitter|youtube|hashtag|caption|reel|carousel|content.?calendar|ugc|creator.?economy|influencer|viral.?content|community.?management|engagement.?rate)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
   },
   {
     id: 'healthcare',
@@ -482,6 +514,8 @@ const SKILL_DOMAINS = [
     outputType: 'clinical documentation, patient communications, and protocols',
     frame: 'communicate clinical information clearly, accurately, and compassionately',
     keywords: /\b(patient|diagnosis|treatment.?protocol|medication|dosage|symptom|clinical.?trial|contraindication|prognosis|evidence.?based|ehr|icd.?code|cpt.?code|hipaa|care.?plan|referral|triage|differential|comorbidity)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
   },
   {
     id: 'academic_research',
@@ -490,6 +524,8 @@ const SKILL_DOMAINS = [
     outputType: 'research papers, literature reviews, and academic analyses',
     frame: 'produce rigorous, well-cited academic work that advances knowledge',
     keywords: /\b(hypothesis|research.?methodology|sample.?size|statistical.?significance|p.?value|literature.?review|peer.?review|citation|abstract|dissertation|thesis|empirical|independent.?variable|control.?group|replication|apa|mla|chicago)\b/i,
+    template: 'D' as const,
+    richFormats: ['table'],
   },
   {
     id: 'real_estate',
@@ -498,6 +534,8 @@ const SKILL_DOMAINS = [
     outputType: 'listings, client communications, and property analyses',
     frame: 'communicate property value and guide clients through complex transactions',
     keywords: /\b(listing|property|mortgage|appraisal|comparable|comps|escrow|title.?deed|zoning|commission|closing.?cost|inspection|mls|cap.?rate|noi|lease.?agreement|tenant|landlord|arv|cash.?on.?cash)\b/i,
+    template: 'D' as const,
+    richFormats: ['table'],
   },
   {
     id: 'creative_writing',
@@ -506,6 +544,8 @@ const SKILL_DOMAINS = [
     outputType: 'stories, scripts, copy, and narrative content',
     frame: 'craft narratives that move people and stay with them',
     keywords: /\b(protagonist|antagonist|plot.?arc|dialogue|scene.?setting|chapter|theme|motif|narrative.?structure|prose.?style|stanza|verse|character.?development|conflict|resolution|pacing|show.?don.?t.?tell|point.?of.?view|unreliable.?narrator)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
   },
 ] as const;
 
@@ -522,6 +562,91 @@ function detectSkillDomain(fileName: string, text: string) {
   }
   return null;
 }
+
+function profileDocument(file: File, extractedText: string, extractionWarning?: string) {
+  const ext = getFileExtension(file.name);
+  const textLength = extractedText.length;
+  const wordCount = extractedText.split(/\s+/).filter(w => w.length > 2).length;
+
+  // Size classification
+  let sizeClass: 'small' | 'medium' | 'large' = 'small';
+  let charCap = 3500;
+  if (textLength > 40000) { sizeClass = 'large'; charCap = 8000; }
+  else if (textLength > 3000) { sizeClass = 'medium'; charCap = 5000; }
+
+  // Reject: pure data files
+  const dataExtensions = ['.csv', '.json', '.yaml', '.yml', '.toml'];
+  if (dataExtensions.includes(ext) && wordCount < 100) {
+    return {
+      template: 'REJECT' as const,
+      richFormats: [],
+      charCap,
+      sizeClass,
+      contentType: 'data',
+      rejectReason: 'This file contains structured data but no behavioral patterns Relatch can extract. Try uploading a document that describes how you work, think, or communicate.',
+    };
+  }
+
+  // Reject: scanned large document
+  if (sizeClass === 'large' && extractionWarning && extractionWarning.includes('OCR')) {
+    return {
+      template: 'REJECT' as const,
+      richFormats: [],
+      charCap,
+      sizeClass,
+      contentType: 'scanned-large',
+      rejectReason: 'This scanned document is too large to process reliably. Try uploading individual chapters or sections instead.',
+    };
+  }
+
+  // Template B: Code files
+  const codeExtensions = ['.js', '.ts', '.jsx', '.tsx', '.py', '.go', '.rs', '.rb', '.html', '.css'];
+  if (codeExtensions.includes(ext)) {
+    return { template: 'B' as const, richFormats: ['codeblock', 'table', 'flowchart'], charCap, sizeClass, contentType: 'code', rejectReason: undefined };
+  }
+  const codeLines = (extractedText.match(/^(const|let|var|def|func|fn|import|export|class|interface|type)\s/mg) || []).length;
+  if (codeLines >= 5) {
+    return { template: 'B' as const, richFormats: ['codeblock', 'table', 'flowchart'], charCap, sizeClass, contentType: 'code', rejectReason: undefined };
+  }
+
+  // Template C: Process/workflow documents
+  const processKeywords = ['procedure', 'step-by-step', 'workflow', 'sop', 'standard operating',
+    'phase', 'milestone', 'checklist', 'if this then', 'decision tree', 'escalation', 'approval process'];
+  const processHits = processKeywords.filter(kw => extractedText.toLowerCase().includes(kw)).length;
+  if (processHits >= 4) {
+    return { template: 'C' as const, richFormats: ['table', 'flowchart'], charCap, sizeClass, contentType: 'process', rejectReason: undefined };
+  }
+
+  // Template D: Professional domain documents
+  const detected = detectSkillDomain(file.name, extractedText);
+  const domainDTemplates = ['finance', 'legal', 'hr_people', 'consulting', 'product_management',
+    'security', 'healthcare', 'academic_research', 'real_estate', 'seo', 'growth_marketing',
+    'data_science', 'pr_communications'];
+  if (detected && domainDTemplates.includes(detected.id)) {
+    return { template: 'D' as const, richFormats: (detected as any).richFormats || ['table', 'flowchart'], charCap, sizeClass, contentType: 'professional', rejectReason: undefined };
+  }
+
+  // Template D: via domain objects that have template D assigned
+  if (detected && (detected as any).template === 'D') {
+    return { template: 'D' as const, richFormats: (detected as any).richFormats || ['table'], charCap, sizeClass, contentType: 'professional', rejectReason: undefined };
+  }
+
+  // Template A: Default — persona, voice, creative, general
+  const detectedTemplate = detected ? (detected as any).template || 'A' : 'A';
+  const detectedRichFormats = detected ? (detected as any).richFormats || ['examples'] : ['examples'];
+  return { template: detectedTemplate as 'A', richFormats: detectedRichFormats, charCap, sizeClass, contentType: 'prose', rejectReason: undefined };
+}
+
+function sampleLargeDocument(text: string, charCap: number): string {
+  if (text.length <= charCap) return text;
+  const chunkSize = Math.floor(charCap / 3);
+  const start = text.slice(0, chunkSize);
+  const middleStart = Math.floor(text.length / 2) - Math.floor(chunkSize / 2);
+  const middle = text.slice(middleStart, middleStart + chunkSize);
+  const end = text.slice(text.length - chunkSize);
+  return start + '\n\n...[content continues]...\n\n' + middle + '\n\n...[content continues]...\n\n' + end;
+}
+
 function sanitizeYamlValue(val: string): string {
   if (/[&:#|>!?*{}[\],@`]/.test(val) || val.includes('"')) {
     return '"' + val.replace(/"/g, '\\"') + '"';
@@ -708,7 +833,7 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string): Promise<string> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500): Promise<string> {
   if (!rawText || rawText.trim().length < 20) {
     return generateFallbackSkill(rawText || '', fileName, category);
   }
@@ -725,7 +850,10 @@ async function enrichWithAI(rawText: string, category: string, fileName: string)
         fileName,
         domainLabel: detectedDomain?.label || 'general professional',
         domainRole: detectedDomain?.role || 'an expert',
-        domainFrame: detectedDomain?.frame || 'communicate effectively'
+        domainFrame: detectedDomain?.frame || 'communicate effectively',
+        template,
+        richFormats,
+        charCap
       }),
     });
 
@@ -774,7 +902,24 @@ async function parseFile(file: File): Promise<UploadedFile> {
   }
 
   const category = inferCategory(file, extracted.text);
-  const content = await enrichWithAI(extracted.text, category, file.name);
+  const profile = profileDocument(file, extracted.text, extracted.warnings.join(' '));
+
+  if (profile.template === 'REJECT') {
+    throw new Error(profile.rejectReason || 'This file type cannot be processed.');
+  }
+
+  const textForEnrichment = profile.sizeClass === 'large'
+    ? sampleLargeDocument(extracted.text, profile.charCap)
+    : extracted.text;
+
+  const content = await enrichWithAI(
+    textForEnrichment,
+    category,
+    file.name,
+    profile.template,
+    profile.richFormats,
+    profile.charCap
+  );
   const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
 
   return {
@@ -1358,6 +1503,9 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     const lines = content.split('\n');
     let inFrontmatter = false, frontmatterDone = false;
     const frontmatterLines: string[] = [];
+    let inCodeBlock = false;
+    let codeAccumulator: string[] = [];
+    let codeLanguage = '';
     const bodyLines: { line: string; index: number }[] = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1381,7 +1529,54 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           if (line.startsWith('> ')) return <blockquote key={index} className="border-l-2 border-blue-500/30 pl-3 py-0.5 text-gray-400 text-sm my-1">{line.replace('> ', '')}</blockquote>;
           if (line.startsWith('- ') || line.startsWith('* ')) return <li key={index} className="ml-4 text-sm text-gray-300 list-disc leading-relaxed">{line.replace(/^[-*]\s/, '')}</li>;
           if (line.startsWith('---')) return <hr key={index} className="border-white/[0.06] my-3" />;
-          if (line.startsWith('```')) return null;
+          // Code block handling
+          if (line.startsWith('```')) {
+            if (!inCodeBlock) {
+              inCodeBlock = true;
+              codeLanguage = line.replace('```', '').trim();
+              codeAccumulator = [];
+              return null;
+            } else {
+              inCodeBlock = false;
+              const codeContent = codeAccumulator.join('\n');
+              codeAccumulator = [];
+              return (
+                <div key={index} className="my-3 rounded-lg overflow-hidden border border-white/[0.08]">
+                  {codeLanguage && (
+                    <div className="px-3 py-1 bg-white/[0.04] border-b border-white/[0.06]">
+                      <span className="text-[11px] text-gray-500 font-mono">{codeLanguage}</span>
+                    </div>
+                  )}
+                  <pre className="p-3 text-xs text-green-300 font-mono leading-relaxed overflow-x-auto bg-[#0a0f1a]">
+                    <code>{codeContent}</code>
+                  </pre>
+                </div>
+              );
+            }
+          }
+          if (inCodeBlock) {
+            codeAccumulator.push(line);
+            return null;
+          }
+          // Table handling
+          if (line.includes('|') && (line.match(/\|/g) || []).length >= 2) {
+            // Skip separator rows like |---|---|
+            if (/^\|[\s\-:|]+\|/.test(line)) return null;
+            const cells = line.split('|').filter(c => c.trim().length > 0).map(c => c.trim());
+            return (
+              <div key={index} className="overflow-x-auto my-3">
+                <table className="w-full text-xs border-collapse">
+                  <tr>
+                    {cells.map((cell, ci) => (
+                      <td key={ci} className="px-3 py-2 border border-white/[0.08] text-gray-300 bg-white/[0.02]">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                </table>
+              </div>
+            );
+          }
           if (line.trim() === '') return <div key={index} className="h-1.5" />;
           let parsed = line;
           parsed = parsed.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
