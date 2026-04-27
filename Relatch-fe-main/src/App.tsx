@@ -1404,7 +1404,17 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                   }
                 }
 
-                const safeSkillName = config.skillName ? config.skillName.replace(/"/g, '') : "My Custom Skill";
+                const baseSkillName = config.skillName ? config.skillName.replace(/"/g, '') : "My Custom Skill";
+                const fileSlug = f.name
+                  .replace(/\.[^/.]+$/, '')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .slice(0, 24);
+                const activeFileCount = files.filter(x => config.categories[x.category]?.enabled).length;
+                const safeSkillName = activeFileCount > 1
+                  ? `${baseSkillName}-${fileSlug}`
+                  : baseSkillName;
 
                 let frontmatter = `---\n`;
                 frontmatter += `name: "${safeSkillName}"\n`;
