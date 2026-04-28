@@ -1088,9 +1088,9 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
             </div>
             <h3 className="text-base font-semibold text-white mb-1.5">{isProcessing ? 'Reading your files...' : isDragging ? 'Drop to upload' : 'Drop your files to get started'}</h3>
             <p className="text-sm text-gray-400 mb-2">
-              Train claude to behave exactly the way you want — up to 3 files
+              Drop the documents that define how you work.
             </p>
-            <p className="text-sm text-gray-500 mb-5">Brand guidelines, meeting notes, writing samples, style docs — anything that shows how you want claude to behave</p>
+            <p className="text-sm text-gray-500 mb-5">Guidelines, notes, examples, writing samples, anything !  Up to 3 files.</p>
             <div className="flex flex-wrap justify-center gap-2">
               {Object.entries(ACCEPTED_TYPES).map(([label, exts]) => (
                 <span key={label} className="px-2.5 py-1 text-[11px] rounded-lg bg-white/[0.03] text-gray-500 border border-white/[0.05] font-medium">
@@ -1802,7 +1802,7 @@ export default function App() {
       Relatch
     </h1>
     <p className="text-[10px] text-gray-500 leading-none mt-0.5">
-      Make Claude work like you
+      Skills that make AI yours.
     </p>
   </div>
 </div>
@@ -1815,7 +1815,7 @@ export default function App() {
           <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
             <AnimatedSection>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/[0.08] border border-blue-500/15 text-blue-400 text-[11px] font-medium mb-5">
-                <Sparkles className="w-3 h-3" />Your files. Your rules. Claude follows both.
+                <Sparkles className="w-3 h-3" />Skill files for every AI.
               </div>
             </AnimatedSection>
             <AnimatedSection delay={100}>
