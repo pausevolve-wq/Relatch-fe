@@ -423,7 +423,7 @@ const SKILL_DOMAINS = [
     role: 'a financial analyst',
     outputType: 'financial models, analysis, and investment recommendations',
     frame: 'produce rigorous financial analysis that supports sound decisions',
-    keywords: /\b(revenue|ebitda|gross.?margin|forecast|budget.?variance|roi|irr|npv|cash.?flow|balance.?sheet|income.?statement|equity|valuation|cap.?table|runway|burn.?rate|mrr|arr|unit.?economics|waterfall)\b/i,
+    keywords: /\b(revenue|income|earnings|sales|expenditure|expense|spending|cost|outlay|budget|cash\.?flow|profit|loss|ebitda|margin|roi|irr|npv|forecast|variance|balance\.?sheet|income\.?statement|asset|liability|equity|debt|capital|fiscal|quarterly|annually|operating|acquisition|investment|allocation|disbursement|receipts)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
