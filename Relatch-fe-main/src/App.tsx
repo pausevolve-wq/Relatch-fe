@@ -1111,7 +1111,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
               <div className="flex flex-col items-center gap-3 text-blue-400">
                 <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                 <span className="text-sm font-medium">Reading your files...</span>
-                <span className="text-xs text-gray-500">Complex PDFs may take a few extra seconds</span>
+                <span className="text-xs text-gray-500">Heavier files take a few extra seconds</span>
               </div>
             </div>
           )}
@@ -1306,7 +1306,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
             <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-violet-400" /></div>
             <div><h3 className="text-sm font-semibold text-white">Anything Claude should always remember?</h3><p className="text-[11px] text-gray-500">Rules, quirks, preferences you didn't upload — type them here directly</p></div>
           </div>
-          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={"Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Always write in a direct, casual tone — no corporate fluff\n• I work in TypeScript, always default to that\n• My company is called Acme — never say \"your company\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
+          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={"Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
           <p className="mt-2 text-[11px] text-gray-600">These go at the top of your skill file as the highest-priority instructions.</p>
         </div>
       </AnimatedSection>
@@ -1807,7 +1807,7 @@ export default function App() {
   </div>
 </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]"><Shield className="w-3 h-3 text-emerald-400" /><span className="text-[10px] text-gray-400 font-medium">Files processed locally — never uploaded</span></div>
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]"><Shield className="w-3 h-3 text-emerald-400" /><span className="text-[10px] text-gray-400 font-medium">Private by design.</span></div>
             </div>
           </div>
         </header>
@@ -1820,11 +1820,11 @@ export default function App() {
             </AnimatedSection>
             <AnimatedSection delay={100}>
               <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
-                Turn Your Work Into<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Claude&apos;s Memory</span>
+                Your Work.<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Built Into Every Response.</span>
               </h2>
             </AnimatedSection>
             <AnimatedSection delay={200}>
-              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Drop any document — notes, guidelines, examples, PDFs and get a structured skill file that makes Claude work exactly like you do. Ready in under a minute.</p>
+              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Every document holds a pattern. Relatch finds it, structures it, and turns it into a skill file your AI follows every single time. Under a minute.</p>
             </AnimatedSection>
             <AnimatedSection delay={300}>
               <div className="flex flex-wrap justify-center gap-3 mb-10">
