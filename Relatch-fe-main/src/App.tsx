@@ -423,7 +423,7 @@ const SKILL_DOMAINS = [
     role: 'a financial analyst',
     outputType: 'financial models, analysis, and investment recommendations',
     frame: 'produce rigorous financial analysis that supports sound decisions',
-    keywords: /\b(revenue|income|earnings|sales|expenditure|expense|spending|cost|outlay|budget|cash\.?flow|profit|loss|ebitda|margin|roi|irr|npv|forecast|variance|balance\.?sheet|income\.?statement|asset|liability|equity|debt|capital|fiscal|quarterly|annually|operating|acquisition|investment|allocation|disbursement|receipts)\b/i,
+    keywords: /\b(ebitda|ebit|cash.?flow|free.?cash.?flow|balance.?sheet|income.?statement|trial.?balance|gross.?margin|operating.?margin|net.?margin|amortization|depreciation|accrual|ledger|debit|credit|gaap|ifrs|wacc|dcf|npv|irr|eps|valuation|dividend|equity|debt|liability|fiscal.?year|fiscal.?quarter|hedge|derivative|bond.?yield|capex|opex|working.?capital|return.?on.?equity|return.?on.?assets|leverage.?ratio|debt.?to.?equity|interest.?rate|principal|maturity|coupon|underwriting|portfolio.?allocation|annual.?report|quarterly.?report|earnings.?call|earnings.?per.?share|book.?value|market.?cap)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -547,17 +547,37 @@ const SKILL_DOMAINS = [
     template: 'A' as const,
     richFormats: ['examples'],
   },
+  {
+    id: 'direct_response_copywriting',
+    label: 'direct response copywriting',
+    role: 'a direct-response copywriter',
+    outputType: 'sales pages, ads, and persuasive copy',
+    frame: 'write copy that earns attention and drives action',
+    keywords: /\b(hook|headline|sub.?headline|call.?to.?action|cta|swipe.?file|swipe|lede|big.?idea|conversion.?copy|persuasion|objection|pain.?point|open.?loop|sales.?page|sales.?letter|landing.?page.?copy|vsl|long.?form.?copy|copywriting|copywriter|direct.?response|aida|pas|fab|features.?benefits|benefit.?driven|emotional.?appeal|urgency|scarcity|social.?proof|testimonial|guarantee|risk.?reversal|offer.?stack|fascination|curiosity.?gap|reason.?why|power.?word|postscript|sales.?hook|click.?bait|conversion.?rate.?optimization|cro.?copy)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
+  },
 ] as const;
 
 function detectSkillDomain(fileName: string, text: string) {
   const combined = (fileName + ' ' + text).toLowerCase();
-  const scores = SKILL_DOMAINS.map(d => ({
-    domain: d,
-    score: (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length,
-  })).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
-  
-  const THRESHOLD = 5;
-  if (scores.length > 0 && scores[0].score >= THRESHOLD) {
+  // Length-normalized scoring: divide raw match counts by document size so
+  // long generic business documents do not win by sheer keyword volume.
+  // A 500-word floor prevents very short docs from being unfairly amplified.
+  const rawWordCount = combined.split(/\s+/).filter(w => w.length > 0).length;
+  const wordCount = Math.max(rawWordCount, 500);
+  const scores = SKILL_DOMAINS.map(d => {
+    const rawCount = (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length;
+    const density = (rawCount * 1000) / wordCount;
+    return { domain: d, score: rawCount, density };
+  }).filter(r => r.score > 0).sort((a, b) => b.density - a.density);
+
+  // Require both a minimum absolute hit count (avoids one-shot matches on tiny
+  // docs) AND a minimum keyword density per 1000 words (kills the long-document
+  // bias that previously made finance win on any sufficiently long business doc).
+  const MIN_RAW = 3;
+  const MIN_DENSITY = 1.5;
+  if (scores.length > 0 && scores[0].score >= MIN_RAW && scores[0].density >= MIN_DENSITY) {
     return scores[0].domain;
   }
   return null;
