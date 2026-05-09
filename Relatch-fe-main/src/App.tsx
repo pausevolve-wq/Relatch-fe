@@ -853,7 +853,7 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500): Promise<string> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small'): Promise<string> {
   if (!rawText || rawText.trim().length < 20) {
     return generateFallbackSkill(rawText || '', fileName, category);
   }
@@ -864,16 +864,17 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        rawText, 
-        category, 
+      body: JSON.stringify({
+        rawText,
+        category,
         fileName,
         domainLabel: detectedDomain?.label || 'general professional',
         domainRole: detectedDomain?.role || 'an expert',
         domainFrame: detectedDomain?.frame || 'communicate effectively',
         template,
         richFormats,
-        charCap
+        charCap,
+        sizeClass
       }),
     });
 
@@ -938,7 +939,8 @@ async function parseFile(file: File): Promise<UploadedFile> {
     file.name,
     profile.template,
     profile.richFormats,
-    profile.charCap
+    profile.charCap,
+    profile.sizeClass
   );
   const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
 
