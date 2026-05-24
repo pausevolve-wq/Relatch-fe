@@ -6,7 +6,7 @@ import {
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info
 } from 'lucide-react';
-import { Show, SignInButton, SignUpButton, UserButton, useUser, useClerk } from "@clerk/react";
+import { Show, SignIn, SignUp, UserButton, useUser } from "@clerk/react";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -1787,13 +1787,67 @@ const STEPS: { key: AppStep; label: string; icon: React.ReactNode; desc: string 
 ];
 
 
+
+function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
+  const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#050a12] overflow-y-auto flex items-center justify-center px-4 py-10">
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
+        <div className="absolute top-[40%] right-[-10%] w-[400px] h-[400px] bg-gradient-to-l from-blue-600/[0.03] to-transparent rounded-full blur-[80px]" />
+        <div className="absolute bottom-[-5%] left-[-5%] w-[500px] h-[300px] bg-gradient-to-tr from-blue-500/[0.025] to-transparent rounded-full blur-[80px]" />
+      </div>
+      <div className="fixed inset-0 pointer-events-none opacity-[0.012]" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`, backgroundSize: '64px 64px' }} />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="fixed top-4 right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-gray-400 hover:text-white transition-colors"
+      >
+        <X className="w-4 h-4" />
+      </button>
+      <div className="relative z-10 w-full max-w-md flex flex-col items-center">
+        <div className="mb-6 text-center flex flex-col items-center">
+          <img src="/logo.png" alt="Relatch" className="w-14 h-14 mb-3 select-none" draggable={false} />
+          <h1 className="text-2xl font-bold text-white tracking-tight">Welcome to Relatch</h1>
+          <p className="text-[12px] text-gray-400 mt-1.5">Sign up or sign in to continue. Skills that make AI yours.</p>
+        </div>
+        {view === 'sign-up' ? (
+          <SignUp routing="hash" />
+        ) : (
+          <SignIn routing="hash" />
+        )}
+        <button
+          type="button"
+          onClick={() => setView(view === 'sign-up' ? 'sign-in' : 'sign-up')}
+          className="mt-5 text-[12px] text-blue-400 hover:text-blue-300 font-medium transition-colors"
+        >
+          {view === 'sign-up' ? 'Already have an account? Sign in' : 'New here? Create an account'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { isLoaded, isSignedIn } = useUser();
-  const { openSignUp } = useClerk();
 
   const [currentStep, setCurrentStep] = useState<AppStep>('upload');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [config, setConfig] = useState<SkillConfig>(DEFAULT_CONFIG);
+  const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
   const canGoNext = currentStep === 'upload' ? files.length > 0 : currentStep === 'configure' ? config.skillName.trim().length > 0 : true;
@@ -1804,17 +1858,16 @@ export default function App() {
   const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
   const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
 
+  useEffect(() => { if (isSignedIn) setAuthGateView(null); }, [isSignedIn]);
+
   const requireAuth = useCallback((action: () => void) => {
     if (!isLoaded) return;
     if (isSignedIn) {
       action();
     } else {
-      openSignUp({
-        forceRedirectUrl: window.location.href,
-        signInForceRedirectUrl: window.location.href,
-      });
+      setAuthGateView('sign-up');
     }
-  }, [isLoaded, isSignedIn, openSignUp]);
+  }, [isLoaded, isSignedIn]);
 
   const goNext = () => {
     requireAuth(() => {
@@ -1828,6 +1881,8 @@ export default function App() {
   }
 
   return (
+    <>
+    {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} />}
     <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
@@ -1860,16 +1915,20 @@ export default function App() {
               </div>
               <Show when="signed-out">
                 <div className="flex items-center gap-2">
-                  <SignInButton mode="modal">
-                    <button className="text-[11px] text-gray-400 hover:text-white transition-colors font-medium px-3 py-1.5 rounded-lg hover:bg-white/[0.05] border border-white/[0.05]">
-                      Sign in
-                    </button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <button className="text-[11px] text-white font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors">
-                      Sign up
-                    </button>
-                  </SignUpButton>
+                  <button
+                    type="button"
+                    onClick={() => setAuthGateView('sign-in')}
+                    className="text-[11px] text-gray-400 hover:text-white transition-colors font-medium px-3 py-1.5 rounded-lg hover:bg-white/[0.05] border border-white/[0.05]"
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthGateView('sign-up')}
+                    className="text-[11px] text-white font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors"
+                  >
+                    Sign up
+                  </button>
                 </div>
               </Show>
               <Show when="signed-in">
@@ -1966,5 +2025,6 @@ export default function App() {
         </footer>
       </div>
     </div>
+    </>
   );
 }
