@@ -1029,7 +1029,7 @@ function AnimatedSection({ children, className = '', delay = 0 }: { children: Re
   );
 }
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, requireAuth }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; requireAuth: (action: () => void) => void }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1095,11 +1095,11 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
     <div className="space-y-6">
       <AnimatedSection>
         <div
-          onDrop={handleDrop}
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); requireAuth(() => handleDrop(e)); }}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
           className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${files.length >= 3 ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'}`}
-          onClick={() => files.length < 3 && document.getElementById('file-input')?.click()}
+          onClick={() => requireAuth(() => { if (files.length < 3) document.getElementById('file-input')?.click(); })}
         >
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.04] via-transparent to-blue-600/[0.02]" />
@@ -1123,7 +1123,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad }: { f
             </div>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onSampleLoad(); }}
+              onClick={(e) => { e.stopPropagation(); requireAuth(() => onSampleLoad()); }}
               className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline underline-offset-4"
             >
               See it in action with a sample file →
@@ -1996,9 +1996,10 @@ export default function App() {
               {currentStep === 'upload' && (
                 <FileUploadZone
                   files={files}
-                  onFilesAdded={(newFiles) => requireAuth(() => handleFilesAdded(newFiles))}
+                  onFilesAdded={handleFilesAdded}
                   onRemoveFile={handleRemoveFile}
-                  onSampleLoad={() => requireAuth(handleAddSample)}
+                  onSampleLoad={handleAddSample}
+                  requireAuth={requireAuth}
                 />
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
