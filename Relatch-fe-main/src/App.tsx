@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import * as pdfjsLib from "pdfjs-dist";
 import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
@@ -1330,17 +1331,17 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><Sparkles className="w-4 h-4 text-blue-400" /></div>
-            <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">Give your skill a name — this is how Claude will remember it</p></div>
+            <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Give your skill a name — this becomes the folder slug in your Codex skills directory' : 'Give your skill a name — this is how Claude will remember it'}</p></div>
           </div>
           <div className="grid grid-cols-1 gap-4">
             <div className="md:col-span-2">
               <label className="block text-xs font-medium text-gray-400 mb-1.5">Skill Name <span className="text-red-400">*</span></label>
               <input type="text" value={config.skillName} onChange={(e) => updateField('skillName', e.target.value)} placeholder="e.g., My Personal Assistant" className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all text-sm outline-none" />
-              <p className="mt-2 text-[11px] text-gray-500">Your skill will be saved as a .md file — drop it straight into Claude Projects</p>
+              <p className="mt-2 text-[11px] text-gray-500">{config.target === 'codex' ? 'Your skill folder will be named after this slug — copy it into .agents/skills/ in your repo' : 'Your skill will be saved as a .md file — drop it straight into Claude Projects'}</p>
               {isValidName && (
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[11px] text-gray-500">Filename:</span>
-                  <code className="text-[11px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md font-mono border border-blue-500/15">{slug}.md</code>
+                  <span className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Folder:' : 'Filename:'}</span>
+                  <code className="text-[11px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md font-mono border border-blue-500/15">{config.target === 'codex' ? `${slug}/SKILL.md` : `${slug}.md`}</code>
                 </div>
               )}
               {config.skillName.trim() && !/^[a-z0-9\s-]+$/i.test(config.skillName) && (
@@ -1359,10 +1360,10 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-violet-400" /></div>
-            <div><h3 className="text-sm font-semibold text-white">Anything Claude should always remember?</h3><p className="text-[11px] text-gray-500">Rules, quirks, preferences you didn't upload — type them here directly</p></div>
+            <div><h3 className="text-sm font-semibold text-white">{config.target === 'codex' ? 'Anything Codex should always follow?' : 'Anything Claude should always remember?'}</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Rules and context injected into your Codex skill as highest-priority instructions' : 'Rules, quirks, preferences you didn\'t upload — type them here directly'}</p></div>
           </div>
-          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={"Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
-          <p className="mt-2 text-[11px] text-gray-600">These go at the top of your skill file as the highest-priority instructions.</p>
+          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={config.target === 'codex' ? "Rules Codex should always apply when this skill is active...\n\nExamples:\n• Always check for existing tests before adding new ones\n• Never modify package.json without confirmation\n• Use the project's existing error handling pattern\n• Default to TypeScript strict mode" : "Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
+          <p className="mt-2 text-[11px] text-gray-600">These go at the top of your {config.target === 'codex' ? 'Codex skill file' : 'skill file'} as the highest-priority instructions.</p>
         </div>
       </AnimatedSection>
 
@@ -1561,29 +1562,82 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     const a = document.createElement('a'); a.href = url; a.download = `${generatedFiles[0].filename.replace('.md', '')}-skills.zip`; a.click(); URL.revokeObjectURL(url);
   };
 
+  // ── Codex assembly helpers ─────────────────────────────────────────────────
+  // Parses name + description from a SKILL.md top frontmatter block.
+  const extractCodexFm = (md: string): { name: string; description: string } | null => {
+    const m = md.match(/^---\n([\s\S]*?)\n---/);
+    if (!m) return null;
+    const nameM = m[1].match(/^name:\s*(.+)$/m);
+    if (!nameM) return null;
+    const descM = m[1].match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+    const rawDesc = descM
+      ? descM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+      : '';
+    const name = nameM[1].trim().replace(/^["']|["']$/g, '');
+    return { name, description: rawDesc || `${name.replace(/-/g, ' ')} skill.` };
+  };
+
+  // Removes exactly the top ---\n...\n--- block; leaves the body.
+  const stripTopFm = (md: string): string =>
+    md.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+
+  // Deduplicates exact heading lines (## / ###), keeping first occurrence + its body.
+  const dedupeHeadings = (text: string): string => {
+    const seen = new Set<string>();
+    const lines = text.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^#{1,3} /.test(line)) {
+        if (seen.has(line.trim())) {
+          i++;
+          while (i < lines.length && !/^#{1,3} /.test(lines[i])) i++;
+          continue;
+        }
+        seen.add(line.trim());
+      }
+      out.push(line);
+      i++;
+    }
+    return out.join('\n');
+  };
+
   const codexSlug = useMemo(() => {
     const raw = (config.skillName || 'my-skill').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
     return raw || 'my-skill';
   }, [config.skillName]);
 
-  const buildCodexSkillMd = () => {
+  const buildCodexSkillMd = (): string => {
     if (!generatedFiles || generatedFiles.length === 0) return '';
-    const firstContent = generatedFiles[0]?.content || '';
-    const firstFm = firstContent.match(/^---\n([\s\S]*?)\n---/);
-    const descMatch = firstFm ? firstFm[1].match(/^description:\s*(.+)$/m) : null;
-    let description = descMatch
-      ? descMatch[1].trim().replace(/^["']|["']$/g, '')
-      : `Skill for ${config.skillName || codexSlug}.`;
-    description = description.replace(/\s+/g, ' ').trim();
+    const slug = codexSlug;
+    const fmData = extractCodexFm(generatedFiles[0].content || '');
+    let description = (fmData?.description || `${config.skillName || slug} skill.`).replace(/\s+/g, ' ').trim();
     const escDesc = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const frontmatter = `---\nname: ${codexSlug}\ndescription: "${escDesc}"\n---`;
-    const bodies = generatedFiles.map(f => f.content.replace(/^---[\s\S]*?---\n?/, '').trim()).filter(Boolean);
-    return `${frontmatter}\n\n${bodies.join('\n\n')}`.trim() + '\n';
+    const frontmatter = `---\nname: ${slug}\ndescription: "${escDesc}"\n---`;
+    const bodies: string[] = [];
+    generatedFiles.forEach((f, idx) => {
+      const body = stripTopFm(f.content);
+      if (!body) return;
+      if (idx === 0) {
+        bodies.push(body);
+      } else {
+        const label = f.filename.replace(/\.md$/, '').replace(/-/g, ' ');
+        bodies.push(`## Source Notes: ${label}\n\n${body}`);
+      }
+    });
+    const combined = dedupeHeadings(bodies.join('\n\n'));
+    return `${frontmatter}\n\n${combined}`.replace(/\n{3,}/g, '\n\n').trim() + '\n';
   };
 
-  const buildCompanionYaml = () => {
-    const displayName = (config.skillName || codexSlug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const short = codexSlug.replace(/-/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const buildCompanionYaml = (): string => {
+    const slug = codexSlug;
+    const displayName = (config.skillName || slug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const fmData = extractCodexFm(generatedFiles?.[0]?.content || '');
+    const rawDesc = fmData?.description || slug.replace(/-/g, ' ');
+    const firstSentence = rawDesc.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || rawDesc;
+    const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence)
+      .replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
   };
 
@@ -1727,7 +1781,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       <AnimatedSection>
         <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
           <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
-          <p className="text-[11px] text-gray-500 mb-3">The full Relatch app connects directly to Claude — no files, no drag & drop. Join the waitlist for early access.</p>
+          <p className="text-[11px] text-gray-500 mb-3">{config.target === 'codex' ? 'The full Relatch app connects directly to Codex — instant skill generation, no files. Join the waitlist for early access.' : 'The full Relatch app connects directly to Claude — no files, no drag & drop. Join the waitlist for early access.'}</p>
           {waitlistSuccess ? (
             <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
           ) : (
@@ -1804,7 +1858,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
         <AnimatedSection delay={200}>
           <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
-              <div className="text-xs text-gray-500 font-medium">Preview</div>
+              <div className="text-xs text-gray-500 font-medium">{config.target === 'codex' ? 'Preview — SKILL.md content (packaged in ZIP on download)' : 'Preview'}</div>
               <div className="flex items-center gap-1.5">
                 <button onClick={() => handleCopy(generatedFiles[activeFile].content, `file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
                   {copied === `file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>}
@@ -1819,6 +1873,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </AnimatedSection>
       )}
+      {config.target !== 'codex' && (
       <AnimatedSection delay={300}>
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
           <div className="flex items-center justify-between">
@@ -1832,19 +1887,30 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
+      )}
       <AnimatedSection delay={400}>
         <div className="p-4 rounded-xl bg-blue-500/[0.04] border border-blue-500/10">
           <div className="flex items-start gap-2.5">
             <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-medium text-blue-300 mb-1">Built for Claude&apos;s skill system</p>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                Includes YAML frontmatter, structured sections, and priority ordering — the exact format Claude&apos;s skill parser expects. Drop it in and it works.
-              </p>
-            </div>
+            {config.target === 'codex' ? (
+              <div>
+                <p className="text-xs font-medium text-blue-300 mb-1">Built for OpenAI Codex CLI</p>
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">name</code> + <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">description</code> frontmatter, intent-trigger sections, and <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">agents/openai.yaml</code> companion — the format Codex&apos;s skill loader expects under <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.agents/skills/</code>.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs font-medium text-blue-300 mb-1">Built for Claude&apos;s skill system</p>
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  Includes YAML frontmatter, structured sections, and priority ordering — the exact format Claude&apos;s skill parser expects. Drop it in and it works.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </AnimatedSection>
+      {config.target !== 'codex' && (
       <AnimatedSection delay={500}>
         <div className="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
           <h4 className="text-sm font-semibold text-white mb-3">How to use with Claude</h4>
@@ -1863,6 +1929,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
+      )}
       {config.target === 'codex' && (
       <AnimatedSection delay={600}>
         <div className="p-5 rounded-xl bg-white/[0.015] border border-violet-500/[0.08]">
@@ -1935,8 +2002,8 @@ function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
 
   const name = agent === 'claude' ? 'Claude' : 'Codex';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
       <div
         className="relatch-overlay-enter absolute inset-0 bg-black/55"
         style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
@@ -1982,7 +2049,8 @@ function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
