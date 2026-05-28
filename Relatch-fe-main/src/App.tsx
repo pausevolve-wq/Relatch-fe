@@ -48,6 +48,7 @@ interface GeneratedSkill {
   content: string;
   category: FileCategory | 'main';
   tokenEstimate: number;
+  codexDescription?: string; // backend description extracted before frontmatter is stripped
 }
 
 let idCounter = 0;
@@ -1546,12 +1547,26 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 
                 return finalOutput.trim();
               };
+            // Capture backend description from raw content BEFORE injectCustomNotes strips frontmatter
+            let codexDescription: string | undefined;
+            if (config.target === 'codex') {
+              const raw = (f.content || '').replace(/\r/g, '').trim();
+              const fmM = raw.match(/---\n([\s\S]*?)\n---/);
+              if (fmM) {
+                const dM = fmM[1].match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+                if (dM) {
+                  const d = dM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+                  if (d) codexDescription = d;
+                }
+              }
+            }
             const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
             return {
               filename: `${slug}-${f.category}.md`,
               content: finalContent,
               category: f.category,
               tokenEstimate: estimateTokens(finalContent),
+              codexDescription,
             };
           });
         if (!cancelled) setGeneratedFiles(results);
@@ -1646,8 +1661,10 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const buildCodexSkillMd = (): string => {
     if (!generatedFiles || generatedFiles.length === 0) return '';
     const slug = codexSlug;
-    const fmData = extractCodexFm(generatedFiles[0].content || '');
-    let description = (fmData?.description || `${config.skillName || slug} skill.`).replace(/\s+/g, ' ').trim();
+    // Prefer description saved from raw backend content; fall back to extracting from content or skill name
+    const savedDesc = generatedFiles[0].codexDescription;
+    const fmData = savedDesc ? null : extractCodexFm(generatedFiles[0].content || '');
+    let description = (savedDesc || fmData?.description || `${config.skillName || slug} skill.`).replace(/\s+/g, ' ').trim();
     const escDesc = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const frontmatter = `---\nname: ${slug}\ndescription: "${escDesc}"\n---`;
     const bodies: string[] = [];
@@ -1662,8 +1679,11 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       }
     });
     const combined = dedupeHeadings(bodies.join('\n\n'));
-    // Final guard: strip any stray frontmatter block that leaked to the top of the combined body
-    const cleanBody = combined.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+    // Strip any stray frontmatter block that leaked to the top of the combined body
+    const afterFmStrip = combined.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+    // Strip any intro prose before the first ## section (backend occasionally adds preamble text)
+    const firstHeadingIdx = afterFmStrip.search(/^## /m);
+    const cleanBody = firstHeadingIdx > 0 ? afterFmStrip.slice(firstHeadingIdx).trim() : afterFmStrip;
     return `${frontmatter}\n\n${cleanBody}`.replace(/\n{3,}/g, '\n\n').trim() + '\n';
   };
 
@@ -1683,36 +1703,41 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     if (!generatedFiles || generatedFiles.length === 0) return;
     setCodexExportError(null);
 
-    const skillMd = buildCodexSkillMd();
-    const errors: string[] = [];
+    let skillMd = buildCodexSkillMd();
 
-    // Validate: exactly one frontmatter block at top
-    const topFm = skillMd.match(/^---\n([\s\S]*?)\n---/);
-    const allFmBlocks = skillMd.match(/---\n[\s\S]*?\n---/g) || [];
-    if (!topFm) errors.push('Missing frontmatter block.');
-    if (allFmBlocks.length > 1) errors.push('Duplicate frontmatter blocks found.');
-
-    if (topFm) {
-      const fmBody = topFm[1];
-      // Validate: only name + description keys (no Claude-era fields)
-      const forbidden = ['domain:', 'content_type:', 'use_cases:', 'origin:', 'tags:'];
-      const found = forbidden.filter(k => fmBody.includes(k));
-      if (found.length > 0) errors.push(`Forbidden frontmatter keys: ${found.join(', ')}`);
-      // Validate: name present and matches slug
-      const nameM = fmBody.match(/^name:\s*(.+)$/m);
-      if (!nameM) errors.push('Frontmatter missing "name".');
-      else if (nameM[1].trim().replace(/^["']|["']$/g, '') !== codexSlug)
-        errors.push('Frontmatter "name" does not match skill slug.');
-      // Validate: description present and non-trivial
-      const descM = fmBody.match(/^description:\s*"?(.+?)"?\s*$/m);
-      if (!descM || descM[1].trim().length < 10) errors.push('Frontmatter "description" is empty or too short.');
-      // Validate: body starts with a ## section
-      const afterFm = skillMd.slice(topFm[0].length).trim();
-      if (afterFm && !afterFm.startsWith('## ') && !afterFm.startsWith('#')) errors.push('Body does not begin with a ## section.');
+    // Silent auto-fix pass — repair any structural issues before export, never block the user
+    // Fix 1: ensure frontmatter exists at top
+    if (!skillMd.match(/^---\n/)) {
+      const desc = (generatedFiles[0].codexDescription || `${config.skillName || codexSlug} skill.`).replace(/"/g, '\\"');
+      skillMd = `---\nname: ${codexSlug}\ndescription: "${desc}"\n---\n\n${skillMd}`;
+    }
+    // Fix 2: strip forbidden Claude-era keys from frontmatter
+    skillMd = skillMd.replace(/^(---\n)([\s\S]*?)(\n---)/m, (_match, open, body, close) => {
+      const cleaned = body.split('\n').filter((l: string) =>
+        !l.match(/^(domain|content_type|use_cases|origin|tags):/)
+      ).join('\n');
+      return `${open}${cleaned}${close}`;
+    });
+    // Fix 3: strip any duplicate frontmatter blocks that appear after the first
+    const fmEnd = skillMd.indexOf('\n---\n');
+    if (fmEnd !== -1) {
+      const header = skillMd.slice(0, fmEnd + 5);
+      const rest = skillMd.slice(fmEnd + 5).replace(/^---\n[\s\S]*?\n---\n?/gm, '');
+      skillMd = (header + rest).replace(/\n{3,}/g, '\n\n').trim() + '\n';
+    }
+    // Fix 4: strip any intro prose before the first ## section
+    const fmEndIdx2 = skillMd.indexOf('\n---\n');
+    if (fmEndIdx2 !== -1) {
+      const afterFm = skillMd.slice(fmEndIdx2 + 5).trim();
+      const firstH = afterFm.search(/^## /m);
+      if (firstH > 0) {
+        skillMd = skillMd.slice(0, fmEndIdx2 + 5) + '\n' + afterFm.slice(firstH).trim() + '\n';
+      }
     }
 
-    if (errors.length > 0) {
-      setCodexExportError(`Export blocked — skill file is malformed: ${errors.join(' · ')}`);
+    // Only block if content is completely unrecoverable (empty body)
+    if (!skillMd.includes('## ')) {
+      setCodexExportError('Skill content is empty — please try generating again.');
       return;
     }
 
