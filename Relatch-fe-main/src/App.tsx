@@ -8,7 +8,7 @@ import {
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock
 } from 'lucide-react';
 import { Show, SignIn, SignUp, UserButton, useUser } from "@clerk/react";
-import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI } from "./agentLogos";
+import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -617,22 +617,232 @@ function templateToShape(tmpl: string | undefined): 'execute' | 'expertise' | 's
   return 'execute';
 }
 
-function detectSkillDomain(fileName: string, text: string) {
+// v2.3: Codex domain intelligence — separate from Claude path, never collides.
+// CODEX_DOMAIN_SUPPLEMENTS provides Codex-specific role/frame/keyword overrides for every
+// existing SKILL_DOMAIN. Claude path is untouched — supplements are only applied when
+// target === 'codex'. The Claude role/frame values in SKILL_DOMAINS are never modified.
+interface CodexDomainSupplement {
+  codexRole: string;
+  codexFrame: string;
+  codexKeywordsExtra?: RegExp;
+}
+
+const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
+  email_copywriting: {
+    codexRole: 'an email sequence reviewer and conversion copy auditor',
+    codexFrame: 'audit email drafts against direct-response criteria, surface weak hooks, and recommend minimal-diff fixes before send',
+    codexKeywordsExtra: /\b(split\.?test|a\.?b\.?variant|template\.?library|sequence\.?step|trigger\.?email|drip\.?step|transactional\.?email)\b/i,
+  },
+  brand_voice: {
+    codexRole: 'a brand voice compliance reviewer operating within established brand guidelines',
+    codexFrame: 'audit content against defined brand rules, flag specific deviations with corrections, escalate ambiguous voice decisions before publishing',
+    codexKeywordsExtra: /\b(style\.?guide|brand\.?compliance|tone\.?audit|voice\.?check|brand\.?review|guideline\.?violation)\b/i,
+  },
+  software_engineering: {
+    codexRole: 'a senior software engineer executing codebase-specific tasks according to the architectural patterns and conventions visible in the source',
+    codexFrame: 'implement, refactor, and verify code against the architectural decisions and conventions extracted from the source — no patterns invented outside what the source shows',
+    codexKeywordsExtra: /\b(goroutine|channel|go\.mod|go\.sum|cargo\.toml|cargo\.lock|impl|trait|lifetime|borrow|rustc|tokio|actix|axum|wasm|dataclass|pydantic|fastapi|django|flask|sqlalchemy|alembic|celery|uvicorn|gunicorn|requirements\.txt|pyproject|decorator|pytest|bash|shell\.?script|zsh|chmod|cron|crontab|makefile|cmake|gradle|maven|pom\.xml|build\.gradle|refactor|migration|pull\.?request|code\.?review|lint\.?error|build\.?fail|ci\.?pipeline|test\.?coverage|dependency|package\.?lock)\b/i,
+  },
+  growth_marketing: {
+    codexRole: 'a growth experiment executor automating paid-ads setup, landing-page optimizations, and A/B test implementation sequences',
+    codexFrame: 'execute growth experiment workflows, implement conversion optimizations, and verify measurement setup before activating campaigns',
+    codexKeywordsExtra: /\b(experiment\.?setup|variant|control\.?group|ad\.?copy|campaign\.?launch|conversion\.?tracking|pixel\.?setup|gtm)\b/i,
+  },
+  product_design: {
+    codexRole: 'a UX design reviewer auditing interface decisions against usability criteria and design system compliance before handoff',
+    codexFrame: 'review designs for friction, accessibility gaps, and design system violations — surface minimal-diff corrections before engineering handoff',
+    codexKeywordsExtra: /\b(design\.?review|handoff|component\.?spec|design\.?token|accessibility\.?audit|contrast\.?ratio|focus\.?trap)\b/i,
+  },
+  education: {
+    codexRole: 'a curriculum structure validator operating within defined instructional design standards and learning objective frameworks',
+    codexFrame: 'validate learning materials against pedagogical frameworks, surface structural gaps, and apply standardized scaffolding templates',
+    codexKeywordsExtra: /\b(course\.?structure|learning\.?path|assessment\.?rubric|competency|objective\.?alignment|lms|scorm)\b/i,
+  },
+  legal: {
+    codexRole: 'a legal document drafter operating within strict compliance boundaries — refuses advisory, interpretive, or strategic legal decisions',
+    codexFrame: 'produce structured legal documents from source templates, flag ambiguous clauses for human review, refuse all legal advice or risk assessment',
+    codexKeywordsExtra: /\b(clause\.?template|contract\.?template|nda|msa|sla|compliance\.?checklist|gdpr\.?article|dpa|data\.?processing)\b/i,
+  },
+  finance: {
+    codexRole: 'a financial model executor and report generator operating within defined formula conventions and compliance boundaries',
+    codexFrame: 'build and validate financial models, generate structured reports from templates, and escalate valuation assumptions and interpretive decisions for human review',
+    codexKeywordsExtra: /\b(model\.?template|formula|spreadsheet|financial\.?model|forecast\.?template|variance\.?analysis|budget\.?vs\.?actual)\b/i,
+  },
+  seo: {
+    codexRole: 'an SEO task executor implementing meta tags, content briefs, technical SEO fixes, internal linking structures, and schema markup',
+    codexFrame: 'execute SEO checklist items, apply technical optimizations, validate against defined ranking criteria, and verify implementation before publishing',
+    codexKeywordsExtra: /\b(meta\.?tag|title\.?tag|robots\.?txt|sitemap|redirect|canonical\.?tag|core\.?web\.?vital|page\.?speed|structured\.?data|json\.?ld)\b/i,
+  },
+  hr_people: {
+    codexRole: 'an HR document drafter and people-ops workflow executor operating within defined policy and legal boundaries',
+    codexFrame: 'generate structured HR documents and execute onboarding workflows from defined templates — escalate policy-ambiguous and jurisdiction-specific edge cases',
+    codexKeywordsExtra: /\b(hr\.?template|offer\.?template|policy\.?document|handbook\.?section|onboarding\.?checklist|leveling\.?rubric)\b/i,
+  },
+  data_science: {
+    codexRole: 'a data science code executor implementing data pipelines, model training sequences, and data validation workflows according to the patterns in the source',
+    codexFrame: 'implement data pipelines and ML code according to source conventions, verify data quality checkpoints, and run defined validation steps before shipping',
+    codexKeywordsExtra: /\b(pipeline|etl|feature\.?store|model\.?training|inference\.?pipeline|data\.?validation|schema\.?check|great\.?expectations|dbt|airflow|prefect)\b/i,
+  },
+  product_management: {
+    codexRole: 'a product document reviewer validating PRD structure, scope definition, acceptance criteria quality, and success metric clarity',
+    codexFrame: 'review product documents for completeness and logical coherence, surface scope gaps and undefined success criteria, escalate priority tradeoffs and strategic decisions',
+    codexKeywordsExtra: /\b(prd\.?review|acceptance\.?criteria|story\.?point|scope\.?definition|success\.?metric|product\.?brief)\b/i,
+  },
+  pr_communications: {
+    codexRole: 'a communications draft reviewer applying inverted pyramid structure, spokesperson safety checks, and narrative tone standards before publication',
+    codexFrame: 'review and tighten communications drafts, enforce structural conventions, flag spokesperson risk and embargo violations, and recommend specific edits before release',
+    codexKeywordsExtra: /\b(press\.?review|spokesperson\.?quote|embargo\.?check|crisis\.?statement|media\.?brief|on\.?message)\b/i,
+  },
+  consulting: {
+    codexRole: 'a strategic framework reviewer auditing MECE structure, hypothesis integrity, recommendation logic, and executive summary clarity',
+    codexFrame: 'validate strategic documents for logical completeness, surface gaps in argument chains, apply pyramid principle structure, and escalate missing data or assumption risks',
+    codexKeywordsExtra: /\b(mece\.?check|slide\.?review|deck\.?structure|hypothesis\.?test|executive\.?summary|issue\.?tree|so\.?what)\b/i,
+  },
+  security: {
+    codexRole: 'a security audit executor operating within defined threat models and remediation playbooks — escalates novel threats, unknown attack vectors, and incidents immediately',
+    codexFrame: 'execute security assessments against defined checklists, implement hardening steps from playbooks, and escalate any threat pattern not covered by the source model',
+    codexKeywordsExtra: /\b(security\.?checklist|hardening\.?guide|remediation\.?playbook|audit\.?procedure|compliance\.?scan|soc2|iso27001|pen\.?test\.?report)\b/i,
+  },
+  social_media: {
+    codexRole: 'a social content reviewer applying platform-specific format rules, community guidelines, and brand standards before posting',
+    codexFrame: 'audit social drafts against platform constraints, flag policy risks, verify hashtag and format compliance, and recommend caption and CTA optimizations',
+    codexKeywordsExtra: /\b(caption\.?review|post\.?review|platform\.?guideline|community\.?standard|content\.?policy|hashtag\.?strategy|scheduling)\b/i,
+  },
+  healthcare: {
+    codexRole: 'a clinical documentation executor operating strictly within defined protocols — refuses all diagnostic, prescriptive, or clinical judgment decisions without human oversight',
+    codexFrame: 'generate protocol-compliant clinical documents from defined templates, apply care plan structures, and escalate all clinical judgment, medication, and diagnostic calls',
+    codexKeywordsExtra: /\b(clinical\.?protocol|care\.?pathway|documentation\.?template|patient\.?summary|discharge\.?summary|referral\.?letter)\b/i,
+  },
+  academic_research: {
+    codexRole: 'an academic document reviewer validating research structure, methodology transparency, citation integrity, and argument coherence',
+    codexFrame: 'review research documents for structural and methodological rigor, flag unsupported claims and citation gaps, and apply academic conventions before submission',
+    codexKeywordsExtra: /\b(manuscript\.?review|literature\.?review|citation\.?check|methodology\.?gap|peer\.?review|abstract\.?structure|apa\.?format|research\.?gap)\b/i,
+  },
+  real_estate: {
+    codexRole: 'a real estate document generator operating within defined listing templates and transaction compliance rules',
+    codexFrame: 'produce listings, comparative analyses, and transaction documents from templates — escalates regulatory, valuation, and negotiation decisions to human agents',
+    codexKeywordsExtra: /\b(listing\.?template|property\.?report|comp\.?analysis|transaction\.?checklist|disclosure\.?form|lease\.?template)\b/i,
+  },
+  creative_writing: {
+    codexRole: 'a narrative editor reviewing prose drafts against defined style rules, story structure criteria, and voice guidelines',
+    codexFrame: 'edit and tighten narrative drafts, apply story structure corrections, flag pacing and POV inconsistencies, and pause for author direction on voice ambiguities',
+    codexKeywordsExtra: /\b(draft\.?review|prose\.?edit|story\.?structure|pacing\.?check|voice\.?consistency|line\.?edit|developmental\.?edit)\b/i,
+  },
+  direct_response_copywriting: {
+    codexRole: 'a conversion copy reviewer applying AIDA/PAS persuasion frameworks and direct-response criteria before campaign launch',
+    codexFrame: 'audit sales and ad copy against persuasion frameworks, surface weak hooks and unclear CTAs, and recommend specific word-level improvements before going live',
+    codexKeywordsExtra: /\b(copy\.?review|headline\.?audit|cta\.?test|conversion\.?review|ad\.?copy\.?check|lander\.?review|swipe\.?critique)\b/i,
+  },
+};
+
+// v2.3: Codex-native domains — only searched when target === 'codex'. Never included in
+// Claude detection pool. These cover dominant Codex CLI use cases that have no equivalent
+// in the Claude SKILL_DOMAINS (which were authored for behavioral/persona extraction).
+// Role and frame are already Codex-oriented; no supplement entry needed.
+const CODEX_NATIVE_DOMAINS = [
+  {
+    id: 'devops',
+    label: 'DevOps & infrastructure',
+    role: 'a DevOps engineer executing infrastructure automation and deployment tasks within defined safety rails and rollback criteria',
+    outputType: 'infrastructure configs, deployment scripts, and operational runbooks',
+    frame: 'automate, deploy, and validate infrastructure changes — verify each step before proceeding, maintain rollback readiness at every stage',
+    keywords: /\b(terraform|kubernetes|k8s|helm|docker|ci\.?cd|pipeline|deploy|rollback|infra|pod|node|cluster|ingress|nginx|github\.?action|jenkins|ansible|cloudformation|vpc|subnet|iam|s3|ecr|ecs|eks|gke|aks|argocd|flux|gitops|slo|sli|runbook|incident|escalation|dockerfile|docker\.?compose|service\.?mesh|istio|envoy)\b/i,
+    template: 'B' as const,
+    richFormats: ['codeblock', 'flowchart'],
+    codexShape: 'execute' as const,
+  },
+  {
+    id: 'testing',
+    label: 'testing & quality assurance',
+    role: 'a QA engineer executing test suite implementations, fixture setups, mock configurations, and coverage validation workflows',
+    outputType: 'test suites, fixture configurations, mock setups, and coverage reports',
+    frame: 'implement tests against defined coverage targets and patterns — set up fixtures and mocks, validate boundary conditions, and verify before merging',
+    keywords: /\b(unit\.?test|integration\.?test|e2e|end\.?to\.?end|test\.?suite|fixture|mock|stub|spy|assertion|coverage|jest|vitest|pytest|mocha|cypress|playwright|selenium|test\.?driven|tdd|bdd|given\.?when\.?then|snapshot|regression|smoke\.?test|load\.?test|performance\.?test|test\.?data|factory|faker|seeding|test\.?runner|beforeEach|afterEach)\b/i,
+    template: 'B' as const,
+    richFormats: ['codeblock', 'table'],
+    codexShape: 'execute' as const,
+  },
+  {
+    id: 'database_engineering',
+    label: 'database engineering',
+    role: 'a database engineer executing schema migrations and query optimizations within defined safety boundaries — escalates destructive or high-risk operations',
+    outputType: 'schema migrations, query optimizations, index strategies, and data model documentation',
+    frame: 'design and execute database changes safely — validate before applying, maintain rollback scripts, and escalate any operation that cannot be reversed or affects production data',
+    keywords: /\b(migration|schema|index|query\.?optimization|foreign\.?key|constraint|transaction|deadlock|replication|sharding|partition|stored\.?procedure|trigger|view|materialized|postgres|mysql|mongodb|redis|cassandra|dynamodb|supabase|prisma|alembic|flyway|liquibase|orm|explain\.?plan|query\.?plan|rollback\.?migration|seed\.?data|database\.?design|erd|entity\.?relationship)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
+    codexShape: 'specialist' as const,
+  },
+  {
+    id: 'api_design',
+    label: 'API design & integration',
+    role: 'an API design reviewer operating within defined contract standards and versioning constraints — flags breaking changes and enforces error-response conventions',
+    outputType: 'API specs, endpoint documentation, integration guides, and contract validation reports',
+    frame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
+    keywords: /\b(endpoint|openapi|swagger|rest|graphql|grpc|webhook|rate\.?limit|authentication|authorization|oauth|jwt|api\.?key|versioning|breaking\.?change|idempotent|pagination|cursor|response\.?code|status\.?code|contract|schema\.?validation|json\.?schema|content\.?type|api\.?first|consumer\.?driven|api\.?gateway|graphql\.?schema|resolver)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
+    codexShape: 'specialist' as const,
+  },
+  {
+    id: 'frontend_engineering',
+    label: 'frontend engineering & design systems',
+    role: 'a frontend engineer executing component builds, CSS system implementations, and design token applications according to the conventions and constraints visible in the source',
+    outputType: 'component code, CSS systems, design token files, and frontend architecture documentation',
+    frame: 'implement frontend code from design specifications — no CSS values invented outside defined tokens, no component patterns added beyond what the source shows, verify token application before shipping',
+    keywords: /\b(design\.?token|css\.?variable|css\.?custom\.?property|tailwind|styled\.?component|css\.?module|storybook|atomic\.?design|bem|scss|sass\.?mixin|color\.?system|typography\.?scale|spacing\.?system|spacing\.?scale|breakpoint|component\.?spec|component\.?variant|figma\.?variable|figma\.?token|token\.?set|theme\.?variable|dark\.?mode|font\.?scale|line\.?height|z\.?index|border\.?radius|shadow\.?token|motion\.?token|animation\.?token|css\.?architecture|layout\.?system|grid\.?system|flex\.?utility|utility\.?class|design\.?system\.?implementation|component\.?library\.?implementation|style\.?dictionary|vanilla\.?extract|stitches|panda\.?css)\b/i,
+    template: 'B' as const,
+    richFormats: ['codeblock', 'table'],
+    codexShape: 'execute' as const,
+  },
+  {
+    id: 'technical_documentation',
+    label: 'technical documentation & developer writing',
+    role: 'a technical writer executing documentation tasks — README generation, API reference writing, changelog authoring, and architecture documentation — according to the structure conventions and style patterns visible in the source',
+    outputType: 'READMEs, API reference docs, changelogs, architecture decision records, and technical guides',
+    frame: 'produce technical documentation that matches the structural patterns and terminology of the source — consistent heading hierarchy, code example placement, and section ordering; escalate when source material is ambiguous or scope is unclear',
+    keywords: /\b(readme|changelog|architecture\.?decision\.?record|adr|api\.?reference|api\.?doc|technical\.?guide|developer\.?guide|integration\.?guide|getting\.?started|installation\.?guide|contributing\.?guide|code\.?example|snippet\.?documentation|docstring|jsdoc|typedoc|sphinx|mkdocs|docusaurus|gitbook|confluence\.?page|wiki\.?page|runbook\.?doc|technical\.?spec|design\.?doc|engineering\.?spec|rfc|request\.?for\.?comment|tech\.?spec|system\.?design|c4\.?diagram|sequence\.?diagram|data\.?flow\.?diagram)\b/i,
+    template: 'D' as const,
+    richFormats: ['codeblock', 'table'],
+    codexShape: 'expertise' as const,
+  },
+  {
+    id: 'content_operations',
+    label: 'content operations & editorial production',
+    role: 'a content operations reviewer auditing drafts and briefs against defined frameworks, angle structures, and format standards — operating within the editorial patterns established in the source',
+    outputType: 'content briefs, article drafts, editorial audits, and copy production workflows',
+    frame: 'review and produce content according to the structural frameworks and angle formulas defined in the source — flag weak hooks, inconsistent structure, and missing format elements before publishing; escalate tone and brand-voice decisions',
+    keywords: /\b(content\.?brief|editorial\.?framework|content\.?template|writing\.?framework|content\.?pillar|content\.?angle|story\.?angle|narrative\.?framework|article\.?structure|blog\.?framework|newsletter\.?template|email\.?newsletter|video\.?script|script\.?template|podcast\.?outline|episode\.?brief|show\.?note|content\.?formula|hook\.?formula|headline\.?formula|listicle\.?structure|thought\.?leadership\.?framework|content\.?calendar\.?template|editorial\.?guideline|writing\.?style\.?guide|content\.?swipe|swipe\.?file|angle\.?swipe|repurpose\.?framework|content\.?series\.?structure|content\.?type\.?guide)\b/i,
+    template: 'A' as const,
+    richFormats: ['examples'],
+    codexShape: 'expertise' as const,
+  },
+] as const;
+
+function detectSkillDomain(fileName: string, text: string, target: 'claude' | 'codex' = 'claude') {
+  // Codex path expands the detection pool to include Codex-native domains.
+  // Claude path searches SKILL_DOMAINS only — behavior byte-identical to pre-v2.3.
+  const domainsToSearch: any[] = target === 'codex'
+    ? [...SKILL_DOMAINS, ...CODEX_NATIVE_DOMAINS]
+    : [...SKILL_DOMAINS];
   const combined = (fileName + ' ' + text).toLowerCase();
-  // Length-normalized scoring: divide raw match counts by document size so
-  // long generic business documents do not win by sheer keyword volume.
-  // A 500-word floor prevents very short docs from being unfairly amplified.
   const rawWordCount = combined.split(/\s+/).filter(w => w.length > 0).length;
   const wordCount = Math.max(rawWordCount, 500);
-  const scores = SKILL_DOMAINS.map(d => {
-    const rawCount = (combined.match(new RegExp(d.keywords.source, 'gi')) || []).length;
+  const scores = domainsToSearch.map(d => {
+    const baseKeywords: RegExp = d.keywords;
+    // For Codex path: add extra keyword hits from supplements where defined.
+    // Extra keywords are Codex-vocabulary additions — they don't exist on the Claude path.
+    const supplement = CODEX_DOMAIN_SUPPLEMENTS[d.id];
+    const extraKeywords: RegExp | null = (target === 'codex' && supplement?.codexKeywordsExtra)
+      ? supplement.codexKeywordsExtra
+      : null;
+    const rawCount =
+      (combined.match(new RegExp(baseKeywords.source, 'gi')) || []).length +
+      (extraKeywords ? (combined.match(new RegExp(extraKeywords.source, 'gi')) || []).length : 0);
     const density = (rawCount * 1000) / wordCount;
     return { domain: d, score: rawCount, density };
   }).filter(r => r.score > 0).sort((a, b) => b.density - a.density);
 
-  // Require both a minimum absolute hit count (avoids one-shot matches on tiny
-  // docs) AND a minimum keyword density per 1000 words (kills the long-document
-  // bias that previously made finance win on any sufficiently long business doc).
   const MIN_RAW = 3;
   const MIN_DENSITY = 1.5;
   if (scores.length > 0 && scores[0].score >= MIN_RAW && scores[0].density >= MIN_DENSITY) {
@@ -911,13 +1121,30 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude'): Promise<string> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude'): Promise<string | { content: string; degraded: boolean }> {
+  // v2.4: shared Codex error stub — used at every point where Claude would fall through
+  // to generateFallbackSkill(). Returns { content, degraded: true } so parseFile surfaces
+  // the degraded warning. Structurally valid for Codex CLI; not enriched content.
+  const codexErrorStub = (desc: string): { content: string; degraded: true } => {
+    const s = fileName.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'my-skill';
+    return { content: `---\nname: ${s}\ndescription: "${desc}"\n---\n\n## When to Activate\n### Must Use\n- Retry generation with a cleaner source document\n### Recommended\n- Review source document for sufficient signal\n### Skip\n- Using this artifact as-is without regenerating\n\n## Key Principles\n- This artifact was not generated successfully — regenerate before use.`, degraded: true };
+  };
+
   if (!rawText || rawText.trim().length < 20) {
+    if (target === 'codex') return codexErrorStub('Insufficient source content. Provide a longer document and regenerate.');
     return generateFallbackSkill(rawText || '', fileName, category);
   }
 
   try {
-    const detectedDomain = detectSkillDomain(fileName, rawText);
+    // v2.3: pass target to detectSkillDomain so Codex path searches CODEX_NATIVE_DOMAINS too.
+    // profileDocument and generateFallbackSkill still call detectSkillDomain without target
+    // (Claude default) — their behavior is unchanged.
+    const detectedDomain = detectSkillDomain(fileName, rawText, target);
+
+    // v2.3: look up Codex-specific role/frame overrides from CODEX_DOMAIN_SUPPLEMENTS.
+    // For CODEX_NATIVE_DOMAINS hits, supplement is undefined — their role/frame are already
+    // Codex-oriented, so the fallback to detectedDomain?.role is correct in that case.
+    const supplement = detectedDomain ? CODEX_DOMAIN_SUPPLEMENTS[(detectedDomain as any).id] : undefined;
 
     // v2.2: derive codexShape from detected domain (explicit override) or fall back to
     // template-mapped default. Only sent when target === 'codex' — backend defaults to
@@ -934,8 +1161,14 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
         category,
         fileName,
         domainLabel: detectedDomain?.label || 'general professional',
-        domainRole: detectedDomain?.role || 'an expert',
-        domainFrame: detectedDomain?.frame || 'communicate effectively',
+        // v2.3: Codex path uses supplement.codexRole (operational constraint language) instead of
+        // the Claude-flavored role. Claude path is byte-identical — always takes the else branch.
+        domainRole: (target === 'codex' && supplement?.codexRole)
+          ? supplement.codexRole
+          : (detectedDomain as any)?.role || 'an expert',
+        domainFrame: (target === 'codex' && supplement?.codexFrame)
+          ? supplement.codexFrame
+          : (detectedDomain as any)?.frame || 'communicate effectively',
         template,
         richFormats,
         charCap,
@@ -946,20 +1179,31 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     });
 
     if (response.status === 422) {
+      if (target === 'codex') return codexErrorStub('Source content did not contain enough operational signal. Provide a richer document and regenerate.');
       return generateFallbackSkill(rawText, fileName, category);
     }
 
     if (!response.ok) {
+      if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
       return generateFallbackSkill(rawText, fileName, category);
     }
 
     const data = await response.json();
     if (!data.enriched) {
+      if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
       return generateFallbackSkill(rawText, fileName, category);
+    }
+
+    // v2.4: When the backend used the deterministic fallback assembler, surface a degraded
+    // signal to parseFile so it can attach a warning to the file card.
+    // The artifact itself is structurally valid and renderable — this only adds a notice.
+    if (data.model === 'deterministic-fallback' && target === 'codex') {
+      return { content: fixAiYamlFrontmatter(data.enriched), degraded: true };
     }
 
     return fixAiYamlFrontmatter(data.enriched);
   } catch (err) {
+    if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
     return generateFallbackSkill(rawText, fileName, category);
   }
 }
@@ -1000,7 +1244,10 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Pro
     ? sampleLargeDocument(extracted.text, profile.charCap)
     : extracted.text;
 
-  const content = await enrichWithAI(
+  // v2.4: enrichWithAI returns string on success or { content, degraded: true } when the
+  // backend used the deterministic Codex fallback assembler. Unpack here — content is always
+  // a string, degraded flag triggers a user-visible warning on the file card.
+  const enrichResult = await enrichWithAI(
     textForEnrichment,
     category,
     file.name,
@@ -1010,7 +1257,12 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Pro
     profile.sizeClass,
     target
   );
-  const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
+  const content = typeof enrichResult === 'string' ? enrichResult : (enrichResult as any).content;
+  const isDegraded = typeof enrichResult !== 'string' && (enrichResult as any).degraded === true;
+  const extractionWarning = [
+    ...(extracted.warnings.length ? [extracted.warnings.join(' ')] : []),
+    ...(isDegraded ? ['Enrichment service was temporarily unavailable. This skill was assembled from your source using local signal extraction — review and refine before deploying.'] : []),
+  ].join(' ') || undefined;
 
   return {
     id: generateId(),
@@ -1923,11 +2175,11 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
             <div className="flex-1" />
             {config.target === 'codex' ? (
               <button onClick={handleDownloadCodex} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
-                <Package className="w-4 h-4" />Download Codex ZIP
+                <img src={CODEX_LOGO_WHITE_URI} alt="" draggable={false} className="w-4 h-4 object-contain shrink-0" />Download Codex ZIP
               </button>
             ) : (
               <button onClick={handleDownloadAll} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
-                <Download className="w-4 h-4" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
+                <img src={CLAUDE_LOGO_WHITE_URI} alt="" draggable={false} className="w-4 h-4 object-contain shrink-0" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
               </button>
             )}
           </div>
@@ -2452,11 +2704,6 @@ export default function App() {
         </header>
         {(currentStep === 'agent' || (currentStep === 'upload' && files.length === 0)) && (
           <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
-            <AnimatedSection>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/[0.08] border border-blue-500/15 text-blue-400 text-[11px] font-medium mb-5">
-                <Sparkles className="w-3 h-3" />Skill files for every AI.
-              </div>
-            </AnimatedSection>
             <AnimatedSection delay={100}>
               <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
                 Your Work.<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Built Into Every Response.</span>
