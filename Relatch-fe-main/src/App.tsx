@@ -1448,6 +1448,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedSkill[] | null>(null);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
+  const [codexExportError, setCodexExportError] = useState<string | null>(null);
 
   const LOADING_MESSAGES = [
     'Building your skill file...',
@@ -1473,19 +1474,17 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 let cleanContent = content.replace(/\r/g, '').trim();
                 cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-                // Codex target: preserve the backend's Codex frontmatter (name + description) and
-                // only append the custom-notes block after it. Do NOT rebuild Claude-style frontmatter.
+                // Codex target: strip backend frontmatter entirely — buildCodexSkillMd() is the
+                // single owner of final Codex frontmatter. Return NOTES + BODY only.
                 if (config.target === 'codex') {
-                  const fmMatch = cleanContent.match(/^---\n[\s\S]*?\n---\n?/);
                   const notesBlock = (notes && notes.trim())
                     ? '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n'
                     : '';
-                  if (fmMatch) {
-                    const fm = fmMatch[0].replace(/\n?$/, '');
-                    const body = cleanContent.slice(fmMatch[0].length).trim();
-                    return (fm + '\n\n' + notesBlock + body).trim();
-                  }
-                  return (notesBlock + cleanContent).trim();
+                  const fmM = cleanContent.match(/---\n[\s\S]*?\n---\n?/);
+                  const body = (fmM && fmM.index !== undefined)
+                    ? cleanContent.slice(fmM.index + fmM[0].length).trim()
+                    : cleanContent.trim();
+                  return (notesBlock + body).trim();
                 }
 
                const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
@@ -1682,9 +1681,44 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
 
   const handleDownloadCodex = async () => {
     if (!generatedFiles || generatedFiles.length === 0) return;
+    setCodexExportError(null);
+
+    const skillMd = buildCodexSkillMd();
+    const errors: string[] = [];
+
+    // Validate: exactly one frontmatter block at top
+    const topFm = skillMd.match(/^---\n([\s\S]*?)\n---/);
+    const allFmBlocks = skillMd.match(/---\n[\s\S]*?\n---/g) || [];
+    if (!topFm) errors.push('Missing frontmatter block.');
+    if (allFmBlocks.length > 1) errors.push('Duplicate frontmatter blocks found.');
+
+    if (topFm) {
+      const fmBody = topFm[1];
+      // Validate: only name + description keys (no Claude-era fields)
+      const forbidden = ['domain:', 'content_type:', 'use_cases:', 'origin:', 'tags:'];
+      const found = forbidden.filter(k => fmBody.includes(k));
+      if (found.length > 0) errors.push(`Forbidden frontmatter keys: ${found.join(', ')}`);
+      // Validate: name present and matches slug
+      const nameM = fmBody.match(/^name:\s*(.+)$/m);
+      if (!nameM) errors.push('Frontmatter missing "name".');
+      else if (nameM[1].trim().replace(/^["']|["']$/g, '') !== codexSlug)
+        errors.push('Frontmatter "name" does not match skill slug.');
+      // Validate: description present and non-trivial
+      const descM = fmBody.match(/^description:\s*"?(.+?)"?\s*$/m);
+      if (!descM || descM[1].trim().length < 10) errors.push('Frontmatter "description" is empty or too short.');
+      // Validate: body starts with a ## section
+      const afterFm = skillMd.slice(topFm[0].length).trim();
+      if (afterFm && !afterFm.startsWith('## ') && !afterFm.startsWith('#')) errors.push('Body does not begin with a ## section.');
+    }
+
+    if (errors.length > 0) {
+      setCodexExportError(`Export blocked — skill file is malformed: ${errors.join(' · ')}`);
+      return;
+    }
+
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
-    zip.file(`${codexSlug}/SKILL.md`, buildCodexSkillMd());
+    zip.file(`${codexSlug}/SKILL.md`, skillMd);
     zip.file(`${codexSlug}/agents/openai.yaml`, buildCompanionYaml());
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -1872,6 +1906,11 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
               </button>
             )}
           </div>
+          {codexExportError && (
+            <div className="mt-3 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-red-400 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{codexExportError}</span>
+            </div>
+          )}
         </div>
       </AnimatedSection>
       <AnimatedSection delay={120}>
