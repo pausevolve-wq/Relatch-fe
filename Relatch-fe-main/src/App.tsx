@@ -245,13 +245,38 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string 
   }
 }
 
+// Returns true when pdfjs-extracted text is structurally weak for the document size —
+// indicating a diagram-heavy or caption-dominated PDF where OCR may recover more content.
+// Only applied for multi-page PDFs (single-page cover/title pages are trusted as-is).
+// Requires at least 2 of 3 signals to fire, reducing false positives on short-but-valid docs.
+function isPdfTextWeak(text: string, numPages: number): boolean {
+  if (numPages < 2) return false;
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return true;
+
+  // Signal 1: Sparse text per page — architecture/diagram PDFs typically extract < 200 chars/page
+  const isSparse = (text.length / numPages) < 200;
+
+  // Signal 2: Fragment-dominated — avg line < 38 chars means mostly labels/captions, not prose
+  const avgLineLen = lines.reduce((s, l) => s + l.length, 0) / lines.length;
+  const isFragmentDominated = avgLineLen < 38;
+
+  // Signal 3: Prose-less — < 8% of lines end with sentence punctuation
+  const sentenceLikeLines = lines.filter(l => /[.!?]$/.test(l)).length;
+  const isProseLess = (sentenceLikeLines / lines.length) < 0.08;
+
+  return [isSparse, isFragmentDominated, isProseLess].filter(Boolean).length >= 2;
+}
+
 async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   const warnings: string[] = [];
   let pdfjsText = '';
+  let numPages = 1;
 
   try {
     const buffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    numPages = pdf.numPages;
     let fullText = '';
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -269,21 +294,29 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
     warnings.push('PDF text layer extraction failed.');
   }
 
-  if (pdfjsText.length >= 50) {
-    return { type: 'pdf', text: pdfjsText, warnings };
+  if (pdfjsText.length < 50) {
+    warnings.push('PDF text layer empty — attempting OCR extraction.');
+    const ocrResult = await callOcrProxy(file);
+    if (ocrResult) {
+      warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents.`);
+      return { type: 'pdf', text: ocrResult.text, warnings };
+    }
+    warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
+    return { type: 'pdf', text: '', warnings };
   }
 
-  warnings.push('PDF text layer empty — attempting OCR extraction.');
-
-  const ocrResult = await callOcrProxy(file);
-
-  if (ocrResult) {
-    warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents.`);
-    return { type: 'pdf', text: ocrResult.text, warnings };
+  // Confidence heuristic: escalate to OCR for diagram-heavy / text-sparse PDFs
+  if (isPdfTextWeak(pdfjsText, numPages)) {
+    warnings.push('PDF appears diagram-heavy or text-sparse — attempting OCR for richer extraction.');
+    const ocrResult = await callOcrProxy(file);
+    if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
+      warnings.push(`Enhanced extraction via OCR (${ocrResult.source}).`);
+      return { type: 'pdf', text: ocrResult.text, warnings };
+    }
+    warnings.push('OCR did not improve extraction — using text layer.');
   }
 
-  warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
-  return { type: 'pdf', text: '', warnings };
+  return { type: 'pdf', text: pdfjsText, warnings };
 }
 
 async function extractDocxText(file: File): Promise<ExtractedTextResult> {
@@ -1565,7 +1598,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   // ── Codex assembly helpers ─────────────────────────────────────────────────
   // Parses name + description from a SKILL.md top frontmatter block.
   const extractCodexFm = (md: string): { name: string; description: string } | null => {
-    const m = md.match(/^---\n([\s\S]*?)\n---/);
+    const m = md.match(/---\n([\s\S]*?)\n---/);
     if (!m) return null;
     const nameM = m[1].match(/^name:\s*(.+)$/m);
     if (!nameM) return null;
@@ -1577,9 +1610,12 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     return { name, description: rawDesc || `${name.replace(/-/g, ' ')} skill.` };
   };
 
-  // Removes exactly the top ---\n...\n--- block; leaves the body.
-  const stripTopFm = (md: string): string =>
-    md.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+  // Finds the first ---...--- block anywhere in content, strips it and any preamble before it.
+  const stripCodexFm = (md: string): string => {
+    const m = md.match(/---\n[\s\S]*?\n---\n?/);
+    if (!m || m.index === undefined) return md.trim();
+    return md.slice(m.index + m[0].length).trim();
+  };
 
   // Deduplicates exact heading lines (## / ###), keeping first occurrence + its body.
   const dedupeHeadings = (text: string): string => {
@@ -1617,7 +1653,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     const frontmatter = `---\nname: ${slug}\ndescription: "${escDesc}"\n---`;
     const bodies: string[] = [];
     generatedFiles.forEach((f, idx) => {
-      const body = stripTopFm(f.content);
+      const body = stripCodexFm(f.content);
       if (!body) return;
       if (idx === 0) {
         bodies.push(body);
@@ -1627,13 +1663,16 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       }
     });
     const combined = dedupeHeadings(bodies.join('\n\n'));
-    return `${frontmatter}\n\n${combined}`.replace(/\n{3,}/g, '\n\n').trim() + '\n';
+    // Final guard: strip any stray frontmatter block that leaked to the top of the combined body
+    const cleanBody = combined.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+    return `${frontmatter}\n\n${cleanBody}`.replace(/\n{3,}/g, '\n\n').trim() + '\n';
   };
 
   const buildCompanionYaml = (): string => {
     const slug = codexSlug;
     const displayName = (config.skillName || slug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const fmData = extractCodexFm(generatedFiles?.[0]?.content || '');
+    // Extract metadata from the normalized assembled SKILL.md, not raw per-file content
+    const fmData = extractCodexFm(buildCodexSkillMd());
     const rawDesc = fmData?.description || slug.replace(/-/g, ' ');
     const firstSentence = rawDesc.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || rawDesc;
     const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence)
@@ -1843,7 +1882,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
-      {generatedFiles.length > 1 && (
+      {generatedFiles.length > 1 && config.target !== 'codex' && (
         <AnimatedSection delay={100}>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {generatedFiles.map((file, i) => (
@@ -1860,16 +1899,24 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
             <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
               <div className="text-xs text-gray-500 font-medium">{config.target === 'codex' ? 'Preview — SKILL.md content (packaged in ZIP on download)' : 'Preview'}</div>
               <div className="flex items-center gap-1.5">
-                <button onClick={() => handleCopy(generatedFiles[activeFile].content, `file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
-                  {copied === `file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>}
-                </button>
-                <button onClick={() => handleCopy(generatedFiles[activeFile].content, `raw-file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
-                  {copied === `raw-file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Code className="w-3.5 h-3.5" /><span>Copy raw</span></>}
-                </button>
-                <button onClick={() => handleDownloadSingle(generatedFiles[activeFile])} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all"><Download className="w-3.5 h-3.5" /></button>
+                {config.target === 'codex' ? (
+                  <button onClick={() => handleCopy(buildCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                    {copied === 'codex-skill-preview' ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy SKILL.md</span></>}
+                  </button>
+                ) : (<>
+                  <button onClick={() => handleCopy(generatedFiles[activeFile].content, `file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                    {copied === `file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>}
+                  </button>
+                  <button onClick={() => handleCopy(generatedFiles[activeFile].content, `raw-file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                    {copied === `raw-file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Code className="w-3.5 h-3.5" /><span>Copy raw</span></>}
+                  </button>
+                  <button onClick={() => handleDownloadSingle(generatedFiles[activeFile])} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all"><Download className="w-3.5 h-3.5" /></button>
+                </>)}
               </div>
             </div>
-            <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">{renderMarkdownPreview(generatedFiles[activeFile].content)}</div>
+            <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">
+              {renderMarkdownPreview(config.target === 'codex' ? buildCodexSkillMd() : generatedFiles[activeFile].content)}
+            </div>
           </div>
         </AnimatedSection>
       )}
