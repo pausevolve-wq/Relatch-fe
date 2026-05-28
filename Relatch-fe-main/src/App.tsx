@@ -4,14 +4,15 @@ import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
   ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
-  Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info
+  Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock
 } from 'lucide-react';
 import { Show, SignIn, SignUp, UserButton, useUser } from "@clerk/react";
+import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI } from "./agentLogos";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 type FileCategory = 'personality' | 'knowledge' | 'instructions' | 'examples' | 'context' | 'preferences';
-type AppStep = 'upload' | 'organize' | 'configure' | 'generate';
+type AppStep = 'agent' | 'upload' | 'organize' | 'configure' | 'generate';
 type Priority = 'high' | 'medium' | 'low';
 
 interface UploadedFile {
@@ -38,6 +39,7 @@ interface SkillConfig {
   description: string;
   customNotes: string;
   categories: Record<FileCategory, CategoryConfig>;
+  target: 'claude' | 'codex';
 }
 
 interface GeneratedSkill {
@@ -387,6 +389,7 @@ const SKILL_DOMAINS = [
     keywords: /\b(acquisition|retention|churn.?rate|ltv|cac|roas|a.?b.?test|landing.?page|paid.?ads|ppc|cpc|cpm|attribution|cohort|activation|referral.?program|viral.?loop|growth.?lever|north.?star.?metric|activation.?rate)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
+    codexShape: 'execute' as const,
   },
   {
     id: 'product_design',
@@ -397,6 +400,7 @@ const SKILL_DOMAINS = [
     keywords: /\b(wireframe|prototype|usability.?test|heuristic|user.?journey|figma|sketch|affordance|interaction.?design|friction|empty.?state|microcopy|onboarding.?flow|accessibility|wcag|design.?system|component.?library|modal|tooltip)\b/i,
     template: 'C' as const,
     richFormats: ['table', 'flowchart'],
+    codexShape: 'expertise' as const,
   },
   {
     id: 'education',
@@ -437,6 +441,7 @@ const SKILL_DOMAINS = [
     keywords: /\b(keyword.?research|search.?ranking|backlink|serp|meta.?description|title.?tag|canonical|crawl.?budget|index|schema.?markup|anchor.?text|domain.?authority|search.?intent|topical.?authority|content.?cluster|featured.?snippet|core.?web.?vital)\b/i,
     template: 'D' as const,
     richFormats: ['table'],
+    codexShape: 'execute' as const,
   },
   {
     id: 'hr_people',
@@ -467,6 +472,7 @@ const SKILL_DOMAINS = [
     keywords: /\b(product.?requirement|user.?story|acceptance.?criteria|sprint.?planning|epic|product.?backlog|roadmap.?item|north.?star|success.?metric|discovery|product.?hypothesis|go.?to.?market|launch.?plan|prd|feature.?flag|experiment)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
+    codexShape: 'expertise' as const,
   },
   {
     id: 'pr_communications',
@@ -487,6 +493,7 @@ const SKILL_DOMAINS = [
     keywords: /\b(mece|issue.?tree|so.?what|pyramid.?principle|workstream|deliverable|engagement.?manager|hypothesis.?driven|executive.?summary|straw.?man|benchmarking|best.?practice|operating.?model|change.?management|transformation)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
+    codexShape: 'expertise' as const,
   },
   {
     id: 'security',
@@ -527,6 +534,7 @@ const SKILL_DOMAINS = [
     keywords: /\b(hypothesis|research.?methodology|sample.?size|statistical.?significance|p.?value|literature.?review|peer.?review|citation|abstract|dissertation|thesis|empirical|independent.?variable|control.?group|replication|apa|mla|chicago)\b/i,
     template: 'D' as const,
     richFormats: ['table'],
+    codexShape: 'expertise' as const,
   },
   {
     id: 'real_estate',
@@ -559,6 +567,20 @@ const SKILL_DOMAINS = [
     richFormats: ['examples'],
   },
 ] as const;
+
+// v2.2: derive default Codex generation shape from the Claude template assignment.
+// Used only when the detected SKILL_DOMAIN doesn't override codexShape explicitly.
+// Mapping reflects each shape's cognitive profile:
+//   B (code) → execute     — procedural code work
+//   A (persona/voice) → expertise — creative judgment, human-loop
+//   C (process) / D (domain) → specialist — constrained role with branching/bounds
+// Falls back to 'execute' (the 70% bet) for unknown templates.
+function templateToShape(tmpl: string | undefined): 'execute' | 'expertise' | 'specialist' {
+  if (tmpl === 'B') return 'execute';
+  if (tmpl === 'A') return 'expertise';
+  if (tmpl === 'C' || tmpl === 'D') return 'specialist';
+  return 'execute';
+}
 
 function detectSkillDomain(fileName: string, text: string) {
   const combined = (fileName + ' ' + text).toLowerCase();
@@ -854,14 +876,21 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small'): Promise<string> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude'): Promise<string> {
   if (!rawText || rawText.trim().length < 20) {
     return generateFallbackSkill(rawText || '', fileName, category);
   }
 
   try {
     const detectedDomain = detectSkillDomain(fileName, rawText);
-    
+
+    // v2.2: derive codexShape from detected domain (explicit override) or fall back to
+    // template-mapped default. Only sent when target === 'codex' — backend defaults to
+    // 'execute' if absent, so omitting on Claude requests preserves the existing contract.
+    const codexShape = target === 'codex'
+      ? ((detectedDomain as any)?.codexShape || templateToShape((detectedDomain as any)?.template))
+      : undefined;
+
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -875,7 +904,9 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
         template,
         richFormats,
         charCap,
-        sizeClass
+        sizeClass,
+        target,
+        ...(codexShape ? { codexShape } : {})
       }),
     });
 
@@ -898,7 +929,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
   }
 }
 
-async function parseFile(file: File): Promise<UploadedFile> {
+async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Promise<UploadedFile> {
   const traceId = `ingest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const precheck = validateInputFile(file);
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
@@ -941,7 +972,8 @@ async function parseFile(file: File): Promise<UploadedFile> {
     profile.template,
     profile.richFormats,
     profile.charCap,
-    profile.sizeClass
+    profile.sizeClass,
+    target
   );
   const extractionWarning = extracted.warnings.length ? extracted.warnings.join(' ') : undefined;
 
@@ -1029,7 +1061,7 @@ function AnimatedSection({ children, className = '', delay = 0 }: { children: Re
   );
 }
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, requireAuth }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; requireAuth: (action: () => void) => void }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex' }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1057,7 +1089,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, requi
       setError(`Only ${remaining} more file${remaining === 1 ? '' : 's'} allowed. First ${remaining} selected.`);
     }
 
-    const results = await Promise.allSettled(allFiles.map(file => parseFile(file)));
+    const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target)));
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
     results.forEach((result, i) => {
@@ -1070,7 +1102,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, requi
     if (parsed.length > 0) onFilesAdded(parsed);
     if (errors.length > 0) setError(errors.join(' | '));
     setIsProcessing(false);
-  }, [onFilesAdded, files.length]);
+  }, [onFilesAdded, files.length, target]);
 
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files); }, [handleFiles]);
 
@@ -1095,11 +1127,11 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, requi
     <div className="space-y-6">
       <AnimatedSection>
         <div
-          onDrop={(e) => { e.preventDefault(); setIsDragging(false); requireAuth(() => handleDrop(e)); }}
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleDrop(e); }}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
           className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${files.length >= 3 ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'}`}
-          onClick={() => requireAuth(() => { if (files.length < 3) document.getElementById('file-input')?.click(); })}
+          onClick={() => { if (files.length < 3) document.getElementById('file-input')?.click(); }}
         >
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.04] via-transparent to-blue-600/[0.02]" />
@@ -1123,7 +1155,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, requi
             </div>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); requireAuth(() => onSampleLoad()); }}
+              onClick={(e) => { e.stopPropagation(); onSampleLoad(); }}
               className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline underline-offset-4"
             >
               See it in action with a sample file →
@@ -1407,6 +1439,21 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 let cleanContent = content.replace(/\r/g, '').trim();
                 cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
+                // Codex target: preserve the backend's Codex frontmatter (name + description) and
+                // only append the custom-notes block after it. Do NOT rebuild Claude-style frontmatter.
+                if (config.target === 'codex') {
+                  const fmMatch = cleanContent.match(/^---\n[\s\S]*?\n---\n?/);
+                  const notesBlock = (notes && notes.trim())
+                    ? '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n'
+                    : '';
+                  if (fmMatch) {
+                    const fm = fmMatch[0].replace(/\n?$/, '');
+                    const body = cleanContent.slice(fmMatch[0].length).trim();
+                    return (fm + '\n\n' + notesBlock + body).trim();
+                  }
+                  return (notesBlock + cleanContent).trim();
+                }
+
                const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
         let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : "General";
         if (!domain) domain = "General";
@@ -1512,6 +1559,44 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${generatedFiles[0].filename.replace('.md', '')}-skills.zip`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const codexSlug = useMemo(() => {
+    const raw = (config.skillName || 'my-skill').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return raw || 'my-skill';
+  }, [config.skillName]);
+
+  const buildCodexSkillMd = () => {
+    if (!generatedFiles || generatedFiles.length === 0) return '';
+    const firstContent = generatedFiles[0]?.content || '';
+    const firstFm = firstContent.match(/^---\n([\s\S]*?)\n---/);
+    const descMatch = firstFm ? firstFm[1].match(/^description:\s*(.+)$/m) : null;
+    let description = descMatch
+      ? descMatch[1].trim().replace(/^["']|["']$/g, '')
+      : `Skill for ${config.skillName || codexSlug}.`;
+    description = description.replace(/\s+/g, ' ').trim();
+    const escDesc = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const frontmatter = `---\nname: ${codexSlug}\ndescription: "${escDesc}"\n---`;
+    const bodies = generatedFiles.map(f => f.content.replace(/^---[\s\S]*?---\n?/, '').trim()).filter(Boolean);
+    return `${frontmatter}\n\n${bodies.join('\n\n')}`.trim() + '\n';
+  };
+
+  const buildCompanionYaml = () => {
+    const displayName = (config.skillName || codexSlug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const short = codexSlug.replace(/-/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
+  };
+
+  const handleDownloadCodex = async () => {
+    if (!generatedFiles || generatedFiles.length === 0) return;
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    zip.file(`${codexSlug}/SKILL.md`, buildCodexSkillMd());
+    zip.file(`${codexSlug}/agents/openai.yaml`, buildCompanionYaml());
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleWaitlistSubmit = async (e: React.FormEvent) => {
@@ -1661,22 +1746,38 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
         <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15">
           <div className="flex items-start gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
-            <div>
-              <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
-              <p className="text-sm text-gray-400 mt-0.5">
-                No more rewriting prompts — Claude will follow your rules every time.
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
-            </div>
+            {config.target === 'codex' ? (
+              <div>
+                <h3 className="text-base font-semibold text-white">Your Codex skill is ready</h3>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Codex will follow your rules every time it's invoked.
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Unzip and copy the folder to <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.agents/skills/</code> in your repo</p>
+              </div>
+            ) : (
+              <div>
+                <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  No more rewriting prompts — Claude will follow your rules every time.
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-5">
             <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Files</p><p className="text-lg font-bold text-white font-mono">{generatedFiles.length}</p></div>
             <div className="w-px h-8 bg-white/[0.06]" />
             <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Size</p><p className="text-lg font-bold text-blue-400">{sizeLabel}</p></div>
             <div className="flex-1" />
-            <button onClick={handleDownloadAll} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
-              <Download className="w-4 h-4" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
-            </button>
+            {config.target === 'codex' ? (
+              <button onClick={handleDownloadCodex} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                <Package className="w-4 h-4" />Download Codex ZIP
+              </button>
+            ) : (
+              <button onClick={handleDownloadAll} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                <Download className="w-4 h-4" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
+              </button>
+            )}
           </div>
         </div>
       </AnimatedSection>
@@ -1762,6 +1863,26 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </div>
       </AnimatedSection>
+      {config.target === 'codex' && (
+      <AnimatedSection delay={600}>
+        <div className="p-5 rounded-xl bg-white/[0.015] border border-violet-500/[0.08]">
+          <h4 className="text-sm font-semibold text-white mb-3">How to use with Codex</h4>
+          <div className="space-y-2.5">
+            {[
+              { step: '1', text: 'Download the ZIP above' },
+              { step: '2', text: "Unzip — you'll get a folder containing SKILL.md and agents/openai.yaml" },
+              { step: '3', text: "Copy that folder into .agents/skills/ at your repo root (create the directory if it doesn't exist)" },
+              { step: '4', text: "Run codex in your repo — the skill auto-activates when the description's trigger contexts match" },
+            ].map(item => (
+              <div key={item.step} className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-md bg-violet-500/15 text-violet-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                <p className="text-sm text-gray-400">{item.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </AnimatedSection>
+      )}
       </>)}
     </div>
   );
@@ -1769,6 +1890,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
 
 const DEFAULT_CONFIG: SkillConfig = {
   skillName: '', description: '', customNotes: '',
+  target: 'claude',
   categories: {
     personality: { enabled: true, label: 'Personality & Style', description: 'Communication tone and style', icon: '🧠', priority: 'high' },
     knowledge: { enabled: true, label: 'Knowledge Base', description: 'Domain knowledge and reference data', icon: '📚', priority: 'medium' },
@@ -1780,6 +1902,7 @@ const DEFAULT_CONFIG: SkillConfig = {
 };
 
 const STEPS: { key: AppStep; label: string; icon: React.ReactNode; desc: string }[] = [
+  { key: 'agent', label: 'Choose Agent', icon: <Brain className="w-4 h-4" />, desc: 'Pick your AI agent' },
   { key: 'upload', label: 'Upload', icon: <Upload className="w-4 h-4" />, desc: 'Add your files' },
   { key: 'organize', label: 'Organize', icon: <FolderKanban className="w-4 h-4" />, desc: 'Categorize data' },
   { key: 'configure', label: 'Configure', icon: <Settings className="w-4 h-4" />, desc: 'Skill options' },
@@ -1787,6 +1910,199 @@ const STEPS: { key: AppStep; label: string; icon: React.ReactNode; desc: string 
 ];
 
 
+
+function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
+  agent: 'claude' | 'codex';
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      else if (e.key === 'Enter') onConfirm();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    confirmBtnRef.current?.focus();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onCancel, onConfirm]);
+
+  const name = agent === 'claude' ? 'Claude' : 'Codex';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div
+        className="relatch-overlay-enter absolute inset-0 bg-black/55"
+        style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+        onClick={onCancel}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="relatch-confirm-title"
+        className="relatch-popup-enter relative w-full max-w-sm rounded-2xl border border-white/[0.08] p-7 text-center"
+        style={{
+          background: 'rgba(12,16,24,0.92)',
+          boxShadow: '0 0 40px rgba(58,123,255,0.18)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
+        }}
+      >
+        <h2 id="relatch-confirm-title" className="text-lg font-bold text-white tracking-tight">Confirm selection</h2>
+        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed max-w-[280px] mx-auto">
+          You're selecting <span className="text-white font-medium">{name}</span>. Once locked, you won't be able to switch agents. You can reset the session to choose a different agent.
+        </p>
+        <div className="flex items-center justify-center gap-2.5 mt-5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-xl text-[12px] font-medium text-white/80 bg-transparent border border-white/[0.08] hover:bg-white/[0.04] hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmBtnRef}
+            type="button"
+            onClick={onConfirm}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+            style={{
+              background: 'linear-gradient(180deg, #3b82ff, #2563ff)',
+              boxShadow: '0 0 24px rgba(59,130,255,0.28)',
+            }}
+          >
+            Confirm
+            <Lock className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentSelector({ target, locked, onConfirm, requireAuth }: {
+  target: 'claude' | 'codex';
+  locked: boolean;
+  onConfirm: (t: 'claude' | 'codex') => void;
+  requireAuth: (action: () => void) => void;
+}) {
+  const [pending, setPending] = useState<'claude' | 'codex' | null>(null);
+
+  const handleSelect = (t: 'claude' | 'codex') => {
+    if (locked) return;
+    requireAuth(() => setPending(t));
+  };
+
+  const handleConfirm = () => {
+    if (!pending) return;
+    const choice = pending;
+    setPending(null);
+    onConfirm(choice);
+  };
+
+  const isClaudeSelected = target === 'claude';
+  const isCodexSelected = target === 'codex';
+
+  return (
+    <div className="relative">
+      <p className="text-center text-[13px] text-gray-400 mb-6 max-w-md mx-auto leading-relaxed px-2">
+        Select the AI agent you want to build skills for.
+        <span className="block text-gray-500 mt-0.5">This choice will be locked for this session.</span>
+      </p>
+
+      <div className="flex flex-col sm:flex-row gap-3.5 justify-center items-stretch max-w-2xl mx-auto">
+        {/* Claude card */}
+        <button
+          type="button"
+          aria-pressed={isClaudeSelected}
+          aria-label="Select Claude as export target"
+          disabled={locked && !isClaudeSelected}
+          onClick={() => handleSelect('claude')}
+          className={`relatch-claude-card relative flex-1 min-w-0 flex flex-col items-center justify-center text-center px-5 pt-7 pb-6 rounded-2xl border bg-gradient-to-b from-white/[0.03] to-white/[0.01] transition-all duration-300 ${locked ? 'is-locked' : ''} ${
+            isClaudeSelected
+              ? 'border-blue-500/60 shadow-[0_0_30px_-8px_rgba(59,130,255,0.45)]'
+              : locked
+                ? 'border-white/[0.07]'
+                : 'border-white/[0.07] hover:border-white/[0.14] hover:bg-white/[0.04]'
+          } ${locked && !isClaudeSelected ? 'opacity-40 cursor-not-allowed' : locked ? 'cursor-default' : 'cursor-pointer'}`}
+        >
+          <span className={`absolute top-3.5 right-3.5 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isClaudeSelected ? 'border-blue-500 bg-blue-500/15' : 'border-white/15'}`}>
+            {isClaudeSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+          </span>
+
+          <div className="h-[78px] w-[78px] flex items-center justify-center mb-4 mt-1.5">
+            <img
+              src={CLAUDE_LOGO_URI}
+              alt="Claude"
+              draggable={false}
+              className="relatch-claude-logo w-full h-full object-contain select-none"
+              style={{ transformOrigin: 'center' }}
+            />
+          </div>
+
+          <p className="text-[15px] font-semibold text-white leading-none">Claude</p>
+          <p className="text-[11px] text-gray-400 mt-2 leading-none">Claude Skills</p>
+          <p className="text-[10px] font-mono text-gray-600 mt-2 leading-none">.md skill file</p>
+        </button>
+
+        {/* Codex card */}
+        <button
+          type="button"
+          aria-pressed={isCodexSelected}
+          aria-label="Select Codex as export target"
+          disabled={locked && !isCodexSelected}
+          onClick={() => handleSelect('codex')}
+          className={`relatch-codex-card relative flex-1 min-w-0 flex flex-col items-center justify-center text-center px-5 pt-7 pb-6 rounded-2xl border bg-gradient-to-b from-white/[0.03] to-white/[0.01] transition-all duration-300 ${locked ? 'is-locked' : ''} ${
+            isCodexSelected
+              ? 'border-blue-500/60 shadow-[0_0_30px_-8px_rgba(59,130,255,0.45)]'
+              : locked
+                ? 'border-white/[0.07]'
+                : 'border-white/[0.07] hover:border-white/[0.14] hover:bg-white/[0.04]'
+          } ${locked && !isCodexSelected ? 'opacity-40 cursor-not-allowed' : locked ? 'cursor-default' : 'cursor-pointer'}`}
+        >
+          <span className={`absolute top-3.5 right-3.5 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isCodexSelected ? 'border-blue-500 bg-blue-500/15' : 'border-white/15'}`}>
+            {isCodexSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+          </span>
+
+          <div className="h-[78px] w-[78px] mb-4 mt-1.5" role="img" aria-label="Codex">
+            <div className="relatch-codex-logo-container w-full h-full">
+              <img src={CODEX_BASE_URI} alt="" draggable={false} className="relatch-codex-base" />
+              <img src={CODEX_EYE_URI} alt="" draggable={false} className="relatch-codex-eye" />
+              <img src={CODEX_UNDERSCORE_URI} alt="" draggable={false} className="relatch-codex-underscore" />
+            </div>
+          </div>
+
+          <p className="text-[15px] font-semibold text-white leading-none">Codex</p>
+          <p className="text-[11px] text-gray-400 mt-2 leading-none">Codex Skills</p>
+          <p className="text-[10px] font-mono text-gray-600 mt-2 leading-none">SKILL.md + agents.yaml</p>
+        </button>
+      </div>
+
+      <div className="max-w-2xl mx-auto mt-5 flex items-start gap-2.5 px-4 py-3 rounded-xl border border-blue-500/15 bg-blue-500/[0.04]">
+        <Info className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+        <p className="text-[11px] text-gray-300 leading-relaxed">
+          {locked
+            ? <>Agent locked for this session. Reset the session to choose a different agent.</>
+            : <>Once locked, you won't be able to switch agents. You can reset the session to choose a different agent.</>}
+        </p>
+      </div>
+
+      {pending && (
+        <ConfirmAgentPopup
+          agent={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={handleConfirm}
+        />
+      )}
+    </div>
+  );
+}
 
 function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
   const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
@@ -1844,14 +2160,25 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
 export default function App() {
   const { isLoaded, isSignedIn } = useUser();
 
-  const [currentStep, setCurrentStep] = useState<AppStep>('upload');
+  const [currentStep, setCurrentStep] = useState<AppStep>('agent');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [config, setConfig] = useState<SkillConfig>(DEFAULT_CONFIG);
+  const [targetLocked, setTargetLocked] = useState<boolean>(false);
   const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
-  const canGoNext = currentStep === 'upload' ? files.length > 0 : currentStep === 'configure' ? config.skillName.trim().length > 0 : true;
+  const canGoNext =
+    currentStep === 'agent' ? targetLocked :
+    currentStep === 'upload' ? files.length > 0 :
+    currentStep === 'configure' ? config.skillName.trim().length > 0 :
+    true;
   const missingSkillName = currentStep === 'configure' && config.skillName.trim().length === 0;
+
+  const handleAgentConfirm = useCallback((t: 'claude' | 'codex') => {
+    setConfig(prev => ({ ...prev, target: t }));
+    setTargetLocked(true);
+    setCurrentStep('upload');
+  }, []);
 
   const handleFilesAdded = useCallback((newFiles: UploadedFile[]) => setFiles(prev => [...prev, ...newFiles]), []);
   const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
@@ -1944,7 +2271,7 @@ export default function App() {
             </div>
           </div>
         </header>
-        {currentStep === 'upload' && files.length === 0 && (
+        {(currentStep === 'agent' || (currentStep === 'upload' && files.length === 0)) && (
           <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
             <AnimatedSection>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/[0.08] border border-blue-500/15 text-blue-400 text-[11px] font-medium mb-5">
@@ -1993,13 +2320,23 @@ export default function App() {
           </div>
           <div className="max-w-3xl mx-auto">
             <div key={currentStep}>
+              {currentStep === 'agent' && (
+                <AnimatedSection>
+                  <AgentSelector
+                    target={config.target}
+                    locked={targetLocked}
+                    onConfirm={handleAgentConfirm}
+                    requireAuth={requireAuth}
+                  />
+                </AnimatedSection>
+              )}
               {currentStep === 'upload' && (
                 <FileUploadZone
                   files={files}
                   onFilesAdded={handleFilesAdded}
                   onRemoveFile={handleRemoveFile}
                   onSampleLoad={handleAddSample}
-                  requireAuth={requireAuth}
+                  target={config.target}
                 />
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
@@ -2011,7 +2348,7 @@ export default function App() {
                 <ArrowLeft className="w-3.5 h-3.5" />Back
               </button>
               {currentStep !== 'generate' && (
-                <button title={missingSkillName ? 'Enter a skill name to continue' : ''} onClick={goNext} disabled={!canGoNext} className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-medium transition-all active:scale-[0.97] ${canGoNext ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/15 hover:shadow-blue-500/25' : 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]'}`}>
+                <button title={currentStep === 'agent' && !targetLocked ? 'Select an agent and confirm to continue' : missingSkillName ? 'Enter a skill name to continue' : ''} onClick={goNext} disabled={!canGoNext} className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-medium transition-all active:scale-[0.97] ${canGoNext ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/15 hover:shadow-blue-500/25' : 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]'}`}>
                   {currentStep === 'configure' ? 'Generate Skill' : 'Continue'}<ArrowRight className="w-3.5 h-3.5" />
                 </button>
               )}
