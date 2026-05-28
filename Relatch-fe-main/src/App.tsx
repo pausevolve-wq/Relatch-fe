@@ -1690,8 +1690,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const buildCompanionYaml = (): string => {
     const slug = codexSlug;
     const displayName = (config.skillName || slug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    // Extract metadata from the normalized assembled SKILL.md, not raw per-file content
-    const fmData = extractCodexFm(buildCodexSkillMd());
+    const fmData = extractCodexFm(getNormalizedCodexSkillMd());
     const rawDesc = fmData?.description || slug.replace(/-/g, ' ');
     const firstSentence = rawDesc.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || rawDesc;
     const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence)
@@ -1699,48 +1698,49 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
   };
 
-  const handleDownloadCodex = async () => {
-    if (!generatedFiles || generatedFiles.length === 0) return;
-    setCodexExportError(null);
-
-    let skillMd = buildCodexSkillMd();
-
-    // Silent auto-fix pass — repair any structural issues before export, never block the user
-    // Fix 1: ensure frontmatter exists at top
-    if (!skillMd.match(/^---\n/)) {
-      const desc = (generatedFiles[0].codexDescription || `${config.skillName || codexSlug} skill.`).replace(/"/g, '\\"');
-      skillMd = `---\nname: ${codexSlug}\ndescription: "${desc}"\n---\n\n${skillMd}`;
+  // Single shared normalization function — used by preview, copy, yaml, and ZIP export.
+  // Calls buildCodexSkillMd() then silently repairs any structural issues.
+  // Never throws; always returns a string (empty string only if content is truly unrecoverable).
+  const getNormalizedCodexSkillMd = (): string => {
+    let md = buildCodexSkillMd();
+    if (!md.trim()) return '';
+    // Fix 1: ensure frontmatter block exists at top
+    if (!md.match(/^---\n/)) {
+      const desc = (generatedFiles?.[0]?.codexDescription || `${config.skillName || codexSlug} skill.`).replace(/"/g, '\\"');
+      md = `---\nname: ${codexSlug}\ndescription: "${desc}"\n---\n\n${md}`;
     }
     // Fix 2: strip forbidden Claude-era keys from frontmatter
-    skillMd = skillMd.replace(/^(---\n)([\s\S]*?)(\n---)/m, (_match, open, body, close) => {
+    md = md.replace(/^(---\n)([\s\S]*?)(\n---)/m, (_m, open, body, close) => {
       const cleaned = body.split('\n').filter((l: string) =>
         !l.match(/^(domain|content_type|use_cases|origin|tags):/)
       ).join('\n');
       return `${open}${cleaned}${close}`;
     });
-    // Fix 3: strip any duplicate frontmatter blocks that appear after the first
-    const fmEnd = skillMd.indexOf('\n---\n');
+    // Fix 3: strip any duplicate frontmatter blocks after the first
+    const fmEnd = md.indexOf('\n---\n');
     if (fmEnd !== -1) {
-      const header = skillMd.slice(0, fmEnd + 5);
-      const rest = skillMd.slice(fmEnd + 5).replace(/^---\n[\s\S]*?\n---\n?/gm, '');
-      skillMd = (header + rest).replace(/\n{3,}/g, '\n\n').trim() + '\n';
+      const header = md.slice(0, fmEnd + 5);
+      const rest = md.slice(fmEnd + 5).replace(/^---\n[\s\S]*?\n---\n?/gm, '');
+      md = (header + rest).replace(/\n{3,}/g, '\n\n').trim() + '\n';
     }
     // Fix 4: strip any intro prose before the first ## section
-    const fmEndIdx2 = skillMd.indexOf('\n---\n');
-    if (fmEndIdx2 !== -1) {
-      const afterFm = skillMd.slice(fmEndIdx2 + 5).trim();
+    const fmEnd2 = md.indexOf('\n---\n');
+    if (fmEnd2 !== -1) {
+      const afterFm = md.slice(fmEnd2 + 5).trim();
       const firstH = afterFm.search(/^## /m);
-      if (firstH > 0) {
-        skillMd = skillMd.slice(0, fmEndIdx2 + 5) + '\n' + afterFm.slice(firstH).trim() + '\n';
-      }
+      if (firstH > 0) md = md.slice(0, fmEnd2 + 5) + '\n' + afterFm.slice(firstH).trim() + '\n';
     }
+    return md;
+  };
 
-    // Only block if content is completely unrecoverable (empty body)
+  const handleDownloadCodex = async () => {
+    if (!generatedFiles || generatedFiles.length === 0) return;
+    setCodexExportError(null);
+    const skillMd = getNormalizedCodexSkillMd();
     if (!skillMd.includes('## ')) {
       setCodexExportError('Skill content is empty — please try generating again.');
       return;
     }
-
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     zip.file(`${codexSlug}/SKILL.md`, skillMd);
@@ -1964,7 +1964,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
               <div className="text-xs text-gray-500 font-medium">{config.target === 'codex' ? 'Preview — SKILL.md content (packaged in ZIP on download)' : 'Preview'}</div>
               <div className="flex items-center gap-1.5">
                 {config.target === 'codex' ? (
-                  <button onClick={() => handleCopy(buildCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                  <button onClick={() => handleCopy(getNormalizedCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
                     {copied === 'codex-skill-preview' ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy SKILL.md</span></>}
                   </button>
                 ) : (<>
@@ -1979,7 +1979,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
               </div>
             </div>
             <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">
-              {renderMarkdownPreview(config.target === 'codex' ? buildCodexSkillMd() : generatedFiles[activeFile].content)}
+              {renderMarkdownPreview(config.target === 'codex' ? getNormalizedCodexSkillMd() : generatedFiles[activeFile].content)}
             </div>
           </div>
         </AnimatedSection>
