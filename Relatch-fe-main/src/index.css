@@ -54,12 +54,12 @@
 .relatch-codex-eye {
   z-index: 2;
   transform-origin: center;
-  transform: translateX(-8%) translateY(2%) scale(0.48);
+  transform: translateX(-12%) translateY(-1%) scale(0.56);
 }
 
 .relatch-codex-underscore {
   z-index: 3;
-  transform: translateX(10%) translateY(2%) scale(0.42);
+  transform: translateX(14%) translateY(16%) scale(0.50);
 }
 
 /* Codex — whole logo scales together; only the > eye winks */
@@ -80,9 +80,9 @@
 
 /* The eye keeps its idle translate+scale, only scaleY blinks. */
 @keyframes codexEyeWink {
-  0%   { transform: translateX(-8%) translateY(2%) scale(0.48) scaleY(1); }
-  50%  { transform: translateX(-8%) translateY(2%) scale(0.48) scaleY(0.08); }
-  100% { transform: translateX(-8%) translateY(2%) scale(0.48) scaleY(1); }
+  0%   { transform: translateX(-12%) translateY(-1%) scale(0.56) scaleY(1); }
+  50%  { transform: translateX(-12%) translateY(-1%) scale(0.56) scaleY(0.08); }
+  100% { transform: translateX(-12%) translateY(-1%) scale(0.56) scaleY(1); }
 }
 
 @media (max-width: 640px) {
