@@ -5,7 +5,8 @@ import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
   ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
-  Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock
+  Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
+  Tag
 } from 'lucide-react';
 import { Show, SignIn, SignUp, UserButton, useUser } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
@@ -1575,7 +1576,15 @@ function FileOrganizer({ files, onUpdateCategory }: { files: UploadedFile[]; onU
                         </div>
                         <div className="relative">
                           <select value={file.category} onChange={(e) => onUpdateCategory(file.id, e.target.value as FileCategory)} className="appearance-none bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 pr-7 text-xs text-gray-300 cursor-pointer hover:bg-white/[0.08] focus:ring-1 focus:ring-blue-500/40 transition-colors">
-                            {CATEGORIES.map(cat => (<option key={cat.key} value={cat.key}>{cat.label}</option>))}
+                            {CATEGORIES.map(cat => (
+                              <option
+                                key={cat.key}
+                                value={cat.key}
+                                style={{ backgroundColor: '#0d1117', color: '#e5e7eb' }}
+                              >
+                                {cat.label}
+                              </option>
+                            ))}
                           </select>
                           <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" />
                         </div>
@@ -1616,14 +1625,14 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
       <AnimatedSection>
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><Sparkles className="w-4 h-4 text-blue-400" /></div>
-            <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Give your skill a name — this becomes the folder slug in your Codex skills directory' : 'Give your skill a name — this is how Claude will remember it'}</p></div>
+            <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><Tag className="w-4 h-4 text-blue-400" /></div>
+            <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Give your skill a name. This becomes the folder slug in your Codex skills directory.' : 'Give your skill a name. This is how Claude will remember it.'}</p></div>
           </div>
           <div className="grid grid-cols-1 gap-4">
             <div className="md:col-span-2">
               <label className="block text-xs font-medium text-gray-400 mb-1.5">Skill Name <span className="text-red-400">*</span></label>
               <input type="text" value={config.skillName} onChange={(e) => updateField('skillName', e.target.value)} placeholder="e.g., My Personal Assistant" className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all text-sm outline-none" />
-              <p className="mt-2 text-[11px] text-gray-500">{config.target === 'codex' ? 'Your skill folder will be named after this slug — copy it into .agents/skills/ in your repo' : 'Your skill will be saved as a .md file — drop it straight into Claude Projects'}</p>
+              <p className="mt-2 text-[11px] text-gray-500">{config.target === 'codex' ? 'Your skill folder will be named after this slug. Copy it into .agents/skills/ in your repo.' : 'Your skill will be saved as a .md file. Drop it straight into Claude Projects.'}</p>
               {isValidName && (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Folder:' : 'Filename:'}</span>
@@ -2131,7 +2140,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       <AnimatedSection>
         <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
           <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
-          <p className="text-[11px] text-gray-500 mb-3">{config.target === 'codex' ? 'The full Relatch app connects directly to Codex — instant skill generation, no files. Join the waitlist for early access.' : 'The full Relatch app connects directly to Claude — no files, no drag & drop. Join the waitlist for early access.'}</p>
+          <p className="text-[11px] text-gray-500 mb-3">{config.target === 'codex' ? 'The full Relatch app connects directly to Codex. Instant skill generation, no files. Join the waitlist for early access.' : 'The full Relatch app connects directly to Claude. No files, no drag and drop. Join the waitlist for early access.'}</p>
           {waitlistSuccess ? (
             <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
           ) : (
@@ -2162,7 +2171,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
               <div>
                 <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
                 <p className="text-sm text-gray-400 mt-0.5">
-                  No more rewriting prompts — Claude will follow your rules every time.
+                  No more rewriting prompts. Claude will follow your rules every time.
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
               </div>
@@ -2174,12 +2183,12 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
             <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Size</p><p className="text-lg font-bold text-blue-400">{sizeLabel}</p></div>
             <div className="flex-1" />
             {config.target === 'codex' ? (
-              <button onClick={handleDownloadCodex} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
-                <img src={CODEX_LOGO_WHITE_URI} alt="" draggable={false} className="w-4 h-4 object-contain shrink-0" />Download Codex ZIP
+              <button onClick={handleDownloadCodex} className="flex items-center gap-2 pl-4 pr-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                <img src={CODEX_LOGO_WHITE_URI} alt="" draggable={false} className="w-5 h-5 object-contain shrink-0" />Download Codex ZIP
               </button>
             ) : (
-              <button onClick={handleDownloadAll} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
-                <img src={CLAUDE_LOGO_WHITE_URI} alt="" draggable={false} className="w-4 h-4 object-contain shrink-0" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
+              <button onClick={handleDownloadAll} className="flex items-center gap-2 pl-4 pr-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                <img src={CLAUDE_LOGO_WHITE_URI} alt="" draggable={false} className="w-5 h-5 object-contain shrink-0" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
               </button>
             )}
           </div>
