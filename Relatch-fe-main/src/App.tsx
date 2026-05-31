@@ -1713,6 +1713,30 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const [codexExportError, setCodexExportError] = useState<string | null>(null);
   const [videoVisible, setVideoVisible] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const videoSectionRef = useRef<HTMLDivElement>(null);
+
+  // Warm the setup-guide video into browser cache the moment Step 5 is reachable
+  // (generation completed). By the time the user clicks Download, the file is
+  // already fetched and the <video> element below starts playing immediately.
+  useEffect(() => {
+    if (!generatedFiles || generatedFiles.length === 0) return;
+    const src = config.target === 'codex' ? '/videos/codex-setup.mp4' : '/videos/claude-setup.mp4';
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'video';
+    link.href = src;
+    document.head.appendChild(link);
+    return () => { if (link.parentNode) link.parentNode.removeChild(link); };
+  }, [generatedFiles, config.target]);
+
+  // Smooth-scroll the video guide into view after the user clicks Download.
+  // Runs once per mount when videoVisible flips true.
+  useEffect(() => {
+    if (!videoVisible) return;
+    requestAnimationFrame(() => {
+      videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [videoVisible]);
 
   const LOADING_MESSAGES = [
     'Building your skill file...',
@@ -2243,7 +2267,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
       )}
       {videoVisible && (
         <AnimatedSection delay={0}>
-          <div className="relatch-video-section rounded-2xl overflow-hidden border border-white/[0.08] bg-black/30">
+          <div ref={videoSectionRef} className="relatch-video-section rounded-2xl overflow-hidden border border-white/[0.08] bg-black/30">
             <div className="px-4 py-2.5 flex items-center gap-2.5 bg-white/[0.025] border-b border-white/[0.06]">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -2256,6 +2280,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
               loop
               muted
               playsInline
+              preload="auto"
               className="w-full block"
               src={config.target === 'codex'
                 ? '/videos/codex-setup.mp4'
@@ -2292,9 +2317,9 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
                 ) : (
                   [
                     { step: '1', text: 'Download your skill file above' },
-                    { step: '2', text: 'Open claude.ai → go to any Project → Settings' },
-                    { step: '3', text: 'Drag your .md file into Project Knowledge, or paste into Custom Instructions' },
-                    { step: '4', text: 'Start a new chat. Claude now works exactly like you do.' },
+                    { step: '2', text: 'Open Claude → Customize section' },
+                    { step: '3', text: 'Go to Skills → tap the + icon to upload' },
+                    { step: '4', text: 'Select your downloaded .md file. Claude now works exactly like you do.' },
                   ].map(item => (
                     <div key={item.step} className="flex items-start gap-2.5">
                       <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
