@@ -1711,6 +1711,8 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedSkill[] | null>(null);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [codexExportError, setCodexExportError] = useState<string | null>(null);
+  const [videoVisible, setVideoVisible] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   const LOADING_MESSAGES = [
     'Building your skill file...',
@@ -1861,13 +1863,14 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
 
   const handleDownloadAll = async () => {
     if (!generatedFiles) return;
-    if (generatedFiles.length === 1) { handleDownloadSingle(generatedFiles[0]); return; }
+    if (generatedFiles.length === 1) { handleDownloadSingle(generatedFiles[0]); setVideoVisible(true); return; }
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     for (const file of generatedFiles) zip.file(file.filename, file.content);
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${generatedFiles[0].filename.replace('.md', '')}-skills.zip`; a.click(); URL.revokeObjectURL(url);
+    setVideoVisible(true);
   };
 
   // ── Codex assembly helpers ─────────────────────────────────────────────────
@@ -2010,6 +2013,7 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
     URL.revokeObjectURL(url);
+    setVideoVisible(true);
   };
 
   const handleWaitlistSubmit = async (e: React.FormEvent) => {
@@ -2199,14 +2203,6 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           )}
         </div>
       </AnimatedSection>
-      <AnimatedSection delay={120}>
-        <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <h4 className="text-sm font-medium text-white mb-2">Included in this file</h4>
-          <div className="flex flex-wrap gap-2">
-            {sectionSummary.map((item) => (<span key={item.category} className="px-2.5 py-1 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-gray-300">{item.count} {item.label.toLowerCase()}</span>))}
-          </div>
-        </div>
-      </AnimatedSection>
       {generatedFiles.length > 1 && config.target !== 'codex' && (
         <AnimatedSection delay={100}>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -2245,82 +2241,71 @@ function SkillOutput({ files, config }: { files: UploadedFile[]; config: SkillCo
           </div>
         </AnimatedSection>
       )}
-      {config.target !== 'codex' && (
-      <AnimatedSection delay={300}>
-        <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Package className="w-4 h-4 text-gray-400" />
-              <div><h4 className="text-sm font-medium text-white">Paste into Claude instead</h4><p className="text-[11px] text-gray-500">Skip the file upload — copy everything and paste directly into Claude&apos;s Custom Instructions.</p></div>
+      {videoVisible && (
+        <AnimatedSection delay={0}>
+          <div className="relatch-video-section rounded-2xl overflow-hidden border border-white/[0.08] bg-black/30">
+            <div className="px-4 py-2.5 flex items-center gap-2.5 bg-white/[0.025] border-b border-white/[0.06]">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+              </span>
+              <span className="text-xs font-medium text-gray-300 tracking-wide">Watch Setup Guide</span>
             </div>
-            <button onClick={() => handleCopy(singleFile, 'single-file')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all active:scale-[0.97] ${copied === 'single-file' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-white/[0.05] text-gray-300 border border-white/[0.08] hover:bg-white/[0.08]'}`}>
-              {copied === 'single-file' ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy All</>}
-            </button>
+            <video
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-full block"
+              src={config.target === 'codex'
+                ? '/videos/codex-setup.mp4'
+                : '/videos/claude-setup.mp4'}
+            />
           </div>
-        </div>
-      </AnimatedSection>
-      )}
-      <AnimatedSection delay={400}>
-        <div className="p-4 rounded-xl bg-blue-500/[0.04] border border-blue-500/10">
-          <div className="flex items-start gap-2.5">
-            <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-            {config.target === 'codex' ? (
-              <div>
-                <p className="text-xs font-medium text-blue-300 mb-1">Built for OpenAI Codex CLI</p>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">name</code> + <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">description</code> frontmatter, intent-trigger sections, and <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">agents/openai.yaml</code> companion — the format Codex&apos;s skill loader expects under <code className="text-blue-300 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.agents/skills/</code>.
-                </p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs font-medium text-blue-300 mb-1">Built for Claude&apos;s skill system</p>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  Includes YAML frontmatter, structured sections, and priority ordering — the exact format Claude&apos;s skill parser expects. Drop it in and it works.
-                </p>
+
+          <div className="mt-3 rounded-xl border border-white/[0.05] overflow-hidden bg-white/[0.015]">
+            <button
+              type="button"
+              onClick={() => setShowInstructions(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.025] transition-colors group"
+              aria-expanded={showInstructions}
+            >
+              <span className="text-xs font-medium text-gray-500 group-hover:text-gray-400 transition-colors">
+                Need written instructions?
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-200 ${showInstructions ? 'rotate-180' : ''}`} />
+            </button>
+            {showInstructions && (
+              <div className="px-4 pb-4 pt-2 space-y-2.5 border-t border-white/[0.04]">
+                {config.target === 'codex' ? (
+                  [
+                    { step: '1', text: 'Download the ZIP above' },
+                    { step: '2', text: "Unzip. You'll get a folder containing SKILL.md and agents/openai.yaml" },
+                    { step: '3', text: "Copy that folder into .agents/skills/ at your repo root (create the directory if it doesn't exist)" },
+                    { step: '4', text: "Run codex in your repo. The skill auto-activates when the description's trigger contexts match" },
+                  ].map(item => (
+                    <div key={item.step} className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-md bg-violet-500/15 text-violet-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                      <p className="text-sm text-gray-400 leading-relaxed">{item.text}</p>
+                    </div>
+                  ))
+                ) : (
+                  [
+                    { step: '1', text: 'Download your skill file above' },
+                    { step: '2', text: 'Open claude.ai → go to any Project → Settings' },
+                    { step: '3', text: 'Drag your .md file into Project Knowledge, or paste into Custom Instructions' },
+                    { step: '4', text: 'Start a new chat. Claude now works exactly like you do.' },
+                  ].map(item => (
+                    <div key={item.step} className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                      <p className="text-sm text-gray-400 leading-relaxed">{item.text}</p>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
-        </div>
-      </AnimatedSection>
-      {config.target !== 'codex' && (
-      <AnimatedSection delay={500}>
-        <div className="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
-          <h4 className="text-sm font-semibold text-white mb-3">How to use with Claude</h4>
-          <div className="space-y-2.5">
-            {[
-              { step: '1', text: 'Download your skill file above' },
-              { step: '2', text: 'Open claude.ai → go to any Project → Settings' },
-              { step: '3', text: 'Drag your .md file into Project Knowledge — or paste into Custom Instructions' },
-              { step: '4', text: 'Start a new chat. Claude now works exactly like you do.' },
-            ].map(item => (
-              <div key={item.step} className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
-                <p className="text-sm text-gray-400">{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </AnimatedSection>
-      )}
-      {config.target === 'codex' && (
-      <AnimatedSection delay={600}>
-        <div className="p-5 rounded-xl bg-white/[0.015] border border-violet-500/[0.08]">
-          <h4 className="text-sm font-semibold text-white mb-3">How to use with Codex</h4>
-          <div className="space-y-2.5">
-            {[
-              { step: '1', text: 'Download the ZIP above' },
-              { step: '2', text: "Unzip — you'll get a folder containing SKILL.md and agents/openai.yaml" },
-              { step: '3', text: "Copy that folder into .agents/skills/ at your repo root (create the directory if it doesn't exist)" },
-              { step: '4', text: "Run codex in your repo — the skill auto-activates when the description's trigger contexts match" },
-            ].map(item => (
-              <div key={item.step} className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-md bg-violet-500/15 text-violet-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
-                <p className="text-sm text-gray-400">{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </AnimatedSection>
+        </AnimatedSection>
       )}
       </>)}
     </div>
