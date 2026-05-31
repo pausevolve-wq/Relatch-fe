@@ -122,7 +122,25 @@
   .relatch-codex-card.is-tapped .relatch-codex-logo-container,
   .relatch-codex-card.is-tapped .relatch-codex-eye,
   .relatch-popup-enter,
-  .relatch-overlay-enter {
+  .relatch-overlay-enter,
+  .relatch-video-section {
     animation: none !important;
   }
+}
+
+@keyframes relatchVideoReveal {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.985); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.relatch-video-section {
+  animation: relatchVideoReveal 440ms cubic-bezier(0.22, 0.88, 0.26, 1) forwards;
+}
+
+.relatch-video-section video::-webkit-media-controls {
+  display: none !important;
+}
+.relatch-video-section video::-webkit-media-controls-enclosure {
+  display: none !important;
 }
