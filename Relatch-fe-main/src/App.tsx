@@ -1722,4 +1722,1114 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
   // categories, target) → different signature → flow resets to first-time UX.
   const currentSignature = useMemo(() => {
     if (!generatedFiles || generatedFiles.length === 0) return null;
-    return config.target + '
+    return JSON.stringify({ t: config.target, f: generatedFiles.map(g => [g.filename, g.content]) });
+  }, [generatedFiles, config.target]);
+
+  const videoVisible = currentSignature !== null && currentSignature === videoSeenSignature;
+
+  // Warm the setup-guide video into browser cache the moment Step 5 is reachable
+  // (generation completed). By the time the user clicks Download, the file is
+  // already fetched and the <video> element below starts playing immediately.
+  useEffect(() => {
+    if (!generatedFiles || generatedFiles.length === 0) return;
+    const src = config.target === 'codex' ? '/videos/codex-setup.mp4' : '/videos/claude-setup.mp4';
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'video';
+    link.href = src;
+    document.head.appendChild(link);
+    return () => { if (link.parentNode) link.parentNode.removeChild(link); };
+  }, [generatedFiles, config.target]);
+
+  // Smooth-scroll the video guide into view only on the false→true transition
+  // (i.e. the user just clicked Download). Returning to Step 5 with the video
+  // already revealed must NOT auto-scroll — they should land where they left.
+  useEffect(() => {
+    const prev = prevVideoVisibleRef.current;
+    prevVideoVisibleRef.current = videoVisible;
+    if (prev === null) return; // first render in this mount — no transition
+    if (videoVisible && !prev) {
+      requestAnimationFrame(() => {
+        videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [videoVisible]);
+
+  const LOADING_MESSAGES = [
+    'Building your skill file...',
+    'Almost there — structuring the final sections...',
+  ];
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const interval = setInterval(() => { setLoadingMsgIndex(i => (i + 1) % LOADING_MESSAGES.length); }, 2000);
+    return () => clearInterval(interval);
+  }, [isGenerating]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function generate() {
+      setIsGenerating(true); setGenerationError(null); setLoadingMsgIndex(0);
+      try {
+        const slug = toSkillSlug(config.skillName);
+        const results: GeneratedSkill[] = files
+          .filter(f => config.categories[f.category]?.enabled)
+          .map(f => {
+          const injectCustomNotes = (content: string, notes: string): string => {
+                let cleanContent = content.replace(/\r/g, '').trim();
+                cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
+
+                // Codex target: strip backend frontmatter entirely — buildCodexSkillMd() is the
+                // single owner of final Codex frontmatter. Return NOTES + BODY only.
+                if (config.target === 'codex') {
+                  const notesBlock = (notes && notes.trim())
+                    ? '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n'
+                    : '';
+                  const fmM = cleanContent.match(/---\n[\s\S]*?\n---\n?/);
+                  const body = (fmM && fmM.index !== undefined)
+                    ? cleanContent.slice(fmM.index + fmM[0].length).trim()
+                    : cleanContent.trim();
+                  return (notesBlock + body).trim();
+                }
+
+               const domainMatch = cleanContent.match(/domain:\s*([^\n]+)/);
+        let domain = domainMatch ? domainMatch[1].replace(/^["']+|["']+$/g, '').trim() : "General";
+        if (!domain) domain = "General";
+
+        const typeMatch = cleanContent.match(/content_type:\s*([^\n]+)/);
+        let contentType = typeMatch ? typeMatch[1].replace(/^["']+|["']+$/g, '').trim() : "behavioral skill";
+        if (!contentType) contentType = "behavioral skill";
+
+                let useCases: string[] = ["Professional Communication"];
+                const useCasesMatch = cleanContent.match(/use_cases:\s*(\[[^\]]+\]|(\n\s*-\s*[^\n]+)+)/);
+                
+                if (useCasesMatch) {
+                  const rawCases = useCasesMatch[1];
+                  if (rawCases.startsWith('[')) {
+                    useCases = rawCases.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+                  } else {
+                    useCases = rawCases.split('\n').map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+                  }
+                }
+
+                const baseSkillName = config.skillName ? config.skillName.replace(/"/g, '') : "My Custom Skill";
+                const fileSlug = f.name
+                  .replace(/\.[^/.]+$/, '')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .slice(0, 24);
+                const activeFileCount = files.filter(x => config.categories[x.category]?.enabled).length;
+                const safeSkillName = activeFileCount > 1
+                  ? `${baseSkillName}-${fileSlug}`
+                  : baseSkillName;
+
+                let frontmatter = `---\n`;
+                frontmatter += `name: "${safeSkillName}"\n`;
+                frontmatter += `domain: "${domain}"\n`;
+                frontmatter += `content_type: "${contentType}"\n`;
+                frontmatter += `use_cases:\n`;
+                useCases.forEach(uc => {
+                  frontmatter += `  - "${uc}"\n`;
+                });
+                frontmatter += `---`;
+
+                let body = cleanContent;
+                const yamlRegex = /---\n[\s\S]*?\n---/;
+                const oldYamlMatch = cleanContent.match(yamlRegex);
+                if (oldYamlMatch) {
+                  body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
+                }
+
+                let finalOutput = frontmatter + '\n\n';
+
+                if (notes && notes.trim()) {
+                  finalOutput += '## Custom Instructions\n\n> These instructions take highest priority.\n\n' + notes.trim() + '\n\n';
+                }
+
+                finalOutput += body;
+                
+                return finalOutput.trim();
+              };
+            // Capture backend description from raw content BEFORE injectCustomNotes strips frontmatter
+            let codexDescription: string | undefined;
+            if (config.target === 'codex') {
+              const raw = (f.content || '').replace(/\r/g, '').trim();
+              const fmM = raw.match(/---\n([\s\S]*?)\n---/);
+              if (fmM) {
+                const dM = fmM[1].match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+                if (dM) {
+                  const d = dM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+                  if (d) codexDescription = d;
+                }
+              }
+            }
+            const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
+            return {
+              filename: `${slug}-${f.category}.md`,
+              content: finalContent,
+              category: f.category,
+              tokenEstimate: estimateTokens(finalContent),
+              codexDescription,
+            };
+          });
+        if (!cancelled) setGeneratedFiles(results);
+      } catch (err) {
+        if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
+      } finally {
+        if (!cancelled) setIsGenerating(false);
+      }
+    }
+    generate();
+    return () => { cancelled = true; };
+  }, [files, config]);
+
+  const singleFile = useMemo(() => generatedFiles ? generatedFiles.map(f => f.content).join('\n\n---\n\n') : '', [generatedFiles]);
+  const totalTokens = generatedFiles ? generatedFiles.reduce((s, f) => s + f.tokenEstimate, 0) : 0;
+  const sizeLabel = getSkillSizeLabel(totalTokens);
+  const sectionSummary = useMemo(() => PRIORITY_ORDER.map((category) => ({ category, label: config.categories[category].label, count: files.filter((f) => config.categories[category]?.enabled && f.category === category).length })).filter((entry) => entry.count > 0), [files, config]);
+
+  const handleCopy = async (content: string, id: string) => {
+    try { await navigator.clipboard.writeText(content); } catch {
+      const ta = document.createElement('textarea'); ta.value = content; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    setCopied(id); setTimeout(() => setCopied(null), 2500);
+  };
+
+ const handleDownloadSingle = (skill: GeneratedSkill) => {
+    const blob = new Blob([skill.content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = skill.filename; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadAll = async () => {
+    if (!generatedFiles) return;
+    if (generatedFiles.length === 1) { handleDownloadSingle(generatedFiles[0]); if (currentSignature) setVideoSeenSignature(currentSignature); return; }
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    for (const file of generatedFiles) zip.file(file.filename, file.content);
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${generatedFiles[0].filename.replace('.md', '')}-skills.zip`; a.click(); URL.revokeObjectURL(url);
+    if (currentSignature) setVideoSeenSignature(currentSignature);
+  };
+
+  // ── Codex assembly helpers ─────────────────────────────────────────────────
+  // Parses name + description from a SKILL.md top frontmatter block.
+  const extractCodexFm = (md: string): { name: string; description: string } | null => {
+    const m = md.match(/---\n([\s\S]*?)\n---/);
+    if (!m) return null;
+    const nameM = m[1].match(/^name:\s*(.+)$/m);
+    if (!nameM) return null;
+    const descM = m[1].match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+    const rawDesc = descM
+      ? descM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+      : '';
+    const name = nameM[1].trim().replace(/^["']|["']$/g, '');
+    return { name, description: rawDesc || `${name.replace(/-/g, ' ')} skill.` };
+  };
+
+  // Finds the first ---...--- block anywhere in content, strips it and any preamble before it.
+  const stripCodexFm = (md: string): string => {
+    const m = md.match(/---\n[\s\S]*?\n---\n?/);
+    if (!m || m.index === undefined) return md.trim();
+    return md.slice(m.index + m[0].length).trim();
+  };
+
+  // Deduplicates exact heading lines (## / ###), keeping first occurrence + its body.
+  const dedupeHeadings = (text: string): string => {
+    const seen = new Set<string>();
+    const lines = text.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^#{1,3} /.test(line)) {
+        if (seen.has(line.trim())) {
+          i++;
+          while (i < lines.length && !/^#{1,3} /.test(lines[i])) i++;
+          continue;
+        }
+        seen.add(line.trim());
+      }
+      out.push(line);
+      i++;
+    }
+    return out.join('\n');
+  };
+
+  const codexSlug = useMemo(() => {
+    const raw = (config.skillName || 'my-skill').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return raw || 'my-skill';
+  }, [config.skillName]);
+
+  const buildCodexSkillMd = (): string => {
+    if (!generatedFiles || generatedFiles.length === 0) return '';
+    const slug = codexSlug;
+    // Prefer description saved from raw backend content; fall back to extracting from content or skill name
+    const savedDesc = generatedFiles[0].codexDescription;
+    const fmData = savedDesc ? null : extractCodexFm(generatedFiles[0].content || '');
+    let description = (savedDesc || fmData?.description || `${config.skillName || slug} skill.`).replace(/\s+/g, ' ').trim();
+    const escDesc = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const frontmatter = `---\nname: ${slug}\ndescription: "${escDesc}"\n---`;
+    const bodies: string[] = [];
+    generatedFiles.forEach((f, idx) => {
+      const body = stripCodexFm(f.content);
+      if (!body) return;
+      if (idx === 0) {
+        bodies.push(body);
+      } else {
+        const label = f.filename.replace(/\.md$/, '').replace(/-/g, ' ');
+        bodies.push(`## Source Notes: ${label}\n\n${body}`);
+      }
+    });
+    const combined = dedupeHeadings(bodies.join('\n\n'));
+    // Strip any stray frontmatter block that leaked to the top of the combined body
+    const afterFmStrip = combined.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+    // Strip any intro prose before the first ## section (backend occasionally adds preamble text)
+    const firstHeadingIdx = afterFmStrip.search(/^## /m);
+    const cleanBody = firstHeadingIdx > 0 ? afterFmStrip.slice(firstHeadingIdx).trim() : afterFmStrip;
+    return `${frontmatter}\n\n${cleanBody}`.replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  };
+
+  const buildCompanionYaml = (): string => {
+    const slug = codexSlug;
+    const displayName = (config.skillName || slug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const fmData = extractCodexFm(getNormalizedCodexSkillMd());
+    const rawDesc = fmData?.description || slug.replace(/-/g, ' ');
+    const firstSentence = rawDesc.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || rawDesc;
+    const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence)
+      .replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
+  };
+
+  // Single shared normalization function — used by preview, copy, yaml, and ZIP export.
+  // Calls buildCodexSkillMd() then silently repairs any structural issues.
+  // Never throws; always returns a string (empty string only if content is truly unrecoverable).
+  const getNormalizedCodexSkillMd = (): string => {
+    let md = buildCodexSkillMd();
+    if (!md.trim()) return '';
+    // Fix 1: ensure frontmatter block exists at top
+    if (!md.match(/^---\n/)) {
+      const desc = (generatedFiles?.[0]?.codexDescription || `${config.skillName || codexSlug} skill.`).replace(/"/g, '\\"');
+      md = `---\nname: ${codexSlug}\ndescription: "${desc}"\n---\n\n${md}`;
+    }
+    // Fix 2: strip forbidden Claude-era keys from frontmatter
+    md = md.replace(/^(---\n)([\s\S]*?)(\n---)/m, (_m, open, body, close) => {
+      const cleaned = body.split('\n').filter((l: string) =>
+        !l.match(/^(domain|content_type|use_cases|origin|tags):/)
+      ).join('\n');
+      return `${open}${cleaned}${close}`;
+    });
+    // Fix 3: strip any duplicate frontmatter blocks after the first
+    const fmEnd = md.indexOf('\n---\n');
+    if (fmEnd !== -1) {
+      const header = md.slice(0, fmEnd + 5);
+      const rest = md.slice(fmEnd + 5).replace(/^---\n[\s\S]*?\n---\n?/gm, '');
+      md = (header + rest).replace(/\n{3,}/g, '\n\n').trim() + '\n';
+    }
+    // Fix 4: strip any intro prose before the first ## section
+    const fmEnd2 = md.indexOf('\n---\n');
+    if (fmEnd2 !== -1) {
+      const afterFm = md.slice(fmEnd2 + 5).trim();
+      const firstH = afterFm.search(/^## /m);
+      if (firstH > 0) md = md.slice(0, fmEnd2 + 5) + '\n' + afterFm.slice(firstH).trim() + '\n';
+    }
+    return md;
+  };
+
+  const handleDownloadCodex = async () => {
+    if (!generatedFiles || generatedFiles.length === 0) return;
+    setCodexExportError(null);
+    const skillMd = getNormalizedCodexSkillMd();
+    if (!skillMd.includes('## ')) {
+      setCodexExportError('Skill content is empty — please try generating again.');
+      return;
+    }
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    zip.file(`${codexSlug}/SKILL.md`, skillMd);
+    zip.file(`${codexSlug}/agents/openai.yaml`, buildCompanionYaml());
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
+    URL.revokeObjectURL(url);
+    if (currentSignature) setVideoSeenSignature(currentSignature);
+  };
+
+  const handleWaitlistSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); setWaitlistError(null);
+    const email = waitlistEmail.trim();
+    if (!email) { setWaitlistError('Please enter your email.'); return; }
+    if (!EMAIL_REGEX.test(email)) { setWaitlistError('Please enter a valid email address.'); return; }
+    try {
+      setWaitlistSubmitting(true);
+      const formBody = new URLSearchParams();
+      formBody.set('email', email); formBody.set('source', 'relatch-step4');
+      formBody.set('generatedFiles', (generatedFiles || []).map((file) => file.filename).join(', '));
+      formBody.set('timestamp', new Date().toISOString());
+      const response = await fetch(FORMSPREE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
+      if (!response.ok) throw new Error('Request failed');
+      setWaitlistSuccess(true); setWaitlistEmail('');
+    } catch { setWaitlistError('Could not submit right now. Please try again.'); }
+    finally { setWaitlistSubmitting(false); }
+  };
+
+  const renderMarkdownPreview = (content: string) => {
+    const lines = content.split('\n');
+    let inFrontmatter = false, frontmatterDone = false;
+    const frontmatterLines: string[] = [];
+    let inCodeBlock = false;
+    let codeAccumulator: string[] = [];
+    let codeLanguage = '';
+    const bodyLines: { line: string; index: number }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (i === 0 && line.trim() === '---') { inFrontmatter = true; continue; }
+      if (inFrontmatter && line.trim() === '---') { inFrontmatter = false; frontmatterDone = true; continue; }
+      if (inFrontmatter) { frontmatterLines.push(line); continue; }
+      bodyLines.push({ line, index: i });
+    }
+    return (
+      <div className="space-y-0.5">
+        {frontmatterDone && frontmatterLines.length > 0 && (
+          <div className="mb-4 rounded-lg bg-blue-500/[0.06] border border-blue-500/15 overflow-hidden">
+            <div className="px-3 py-1.5 bg-blue-500/10 border-b border-blue-500/10"><span className="text-[11px] font-medium text-blue-400 font-mono">YAML Frontmatter</span></div>
+            <pre className="px-3 py-2 text-xs text-blue-300/80 font-mono leading-relaxed">{frontmatterLines.join('\n')}</pre>
+          </div>
+        )}
+        {bodyLines.map(({ line, index }) => {
+          if (line.startsWith('# ')) return <h1 key={index} className="text-lg font-bold text-white mt-4 mb-2">{line.replace('# ', '')}</h1>;
+          if (line.startsWith('## ')) return <h2 key={index} className="text-base font-semibold text-blue-400 mt-5 mb-1.5 pb-1.5 border-b border-white/[0.06]">{line.replace('## ', '')}</h2>;
+          if (line.startsWith('### ')) return <h3 key={index} className="text-sm font-medium text-gray-200 mt-3 mb-1">{line.replace('### ', '')}</h3>;
+          if (line.startsWith('> ')) return <blockquote key={index} className="border-l-2 border-blue-500/30 pl-3 py-0.5 text-gray-400 text-sm my-1">{line.replace('> ', '')}</blockquote>;
+          if (line.startsWith('- ') || line.startsWith('* ')) return <li key={index} className="ml-4 text-sm text-gray-300 list-disc leading-relaxed">{line.replace(/^[-*]\s/, '')}</li>;
+          if (line.startsWith('---')) return <hr key={index} className="border-white/[0.06] my-3" />;
+          // Code block handling
+          if (line.startsWith('```')) {
+            if (!inCodeBlock) {
+              inCodeBlock = true;
+              codeLanguage = line.replace('```', '').trim();
+              codeAccumulator = [];
+              return null;
+            } else {
+              inCodeBlock = false;
+              const codeContent = codeAccumulator.join('\n');
+              codeAccumulator = [];
+              return (
+                <div key={index} className="my-3 rounded-lg overflow-hidden border border-white/[0.08]">
+                  {codeLanguage && (
+                    <div className="px-3 py-1 bg-white/[0.04] border-b border-white/[0.06]">
+                      <span className="text-[11px] text-gray-500 font-mono">{codeLanguage}</span>
+                    </div>
+                  )}
+                  <pre className="p-3 text-xs text-green-300 font-mono leading-relaxed overflow-x-auto bg-[#0a0f1a]">
+                    <code>{codeContent}</code>
+                  </pre>
+                </div>
+              );
+            }
+          }
+          if (inCodeBlock) {
+            codeAccumulator.push(line);
+            return null;
+          }
+          // Table handling
+          if (line.includes('|') && (line.match(/\|/g) || []).length >= 2) {
+            // Skip separator rows like |---|---|
+            if (/^\|[\s\-:|]+\|/.test(line)) return null;
+            const cells = line.split('|').filter(c => c.trim().length > 0).map(c => c.trim());
+            return (
+              <div key={index} className="overflow-x-auto my-3">
+                <table className="w-full text-xs border-collapse">
+                  <tr>
+                    {cells.map((cell, ci) => (
+                      <td key={ci} className="px-3 py-2 border border-white/[0.08] text-gray-300 bg-white/[0.02]">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                </table>
+              </div>
+            );
+          }
+          if (line.trim() === '') return <div key={index} className="h-1.5" />;
+          let parsed = line;
+          parsed = parsed.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
+          parsed = parsed.replace(/\*(.*?)\*/g, '<em class="text-gray-400 italic">$1</em>');
+          parsed = parsed.replace(/`(.*?)`/g, '<code class="px-1 py-0.5 text-[11px] bg-white/[0.06] text-blue-300 rounded font-mono">$1</code>');
+          return <p key={index} className="text-sm text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: parsed }} />;
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      {isGenerating && (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-blue-400">
+            <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">{LOADING_MESSAGES[loadingMsgIndex]}</span>
+          </div>
+        </div>
+      )}
+      {generationError && (
+        <AnimatedSection>
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/[0.08] border border-red-500/20 text-red-400 text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0" /><span className="flex-1">{generationError}</span>
+          </div>
+        </AnimatedSection>
+      )}
+      {!isGenerating && generatedFiles && (<>
+      <AnimatedSection>
+        <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+          <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
+          <p className="text-[11px] text-gray-500 mb-3">{config.target === 'codex' ? 'The full Relatch app connects directly to Codex. Instant skill generation, no files. Join the waitlist for early access.' : 'The full Relatch app connects directly to Claude. No files, no drag and drop. Join the waitlist for early access.'}</p>
+          {waitlistSuccess ? (
+            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
+          ) : (
+            <form onSubmit={handleWaitlistSubmit} className="space-y-2.5">
+              <div className="flex gap-2">
+                <input type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} placeholder="you@company.com" className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none" />
+                <button type="submit" disabled={waitlistSubmitting} className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>{waitlistSubmitting ? 'Joining...' : 'Join waitlist'}</button>
+              </div>
+              <p className="text-[11px] text-gray-500">One email when we launch. That&apos;s it.</p>
+              {waitlistError && <p className="text-[11px] text-red-300">{waitlistError}</p>}
+            </form>
+          )}
+        </div>
+      </AnimatedSection>
+      <AnimatedSection>
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-blue-400" /></div>
+            {config.target === 'codex' ? (
+              <div>
+                <h3 className="text-base font-semibold text-white">Your Codex skill is ready</h3>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Codex will follow your rules every time it's invoked.
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Unzip and copy the folder to <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.agents/skills/</code> in your repo</p>
+              </div>
+            ) : (
+              <div>
+                <h3 className="text-base font-semibold text-white">Your skill file is ready</h3>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  No more rewriting prompts. Claude will follow your rules every time.
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Drag this <code className="text-blue-400 bg-blue-500/10 px-1 rounded text-[11px] font-mono">.md</code> file into any Claude Project and it&apos;ll apply every time you chat</p>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-5">
+            <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Files</p><p className="text-lg font-bold text-white font-mono">{generatedFiles.length}</p></div>
+            <div className="w-px h-8 bg-white/[0.06]" />
+            <div><p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Size</p><p className="text-lg font-bold text-blue-400">{sizeLabel}</p></div>
+            <div className="flex-1" />
+            {config.target === 'codex' ? (
+              <button onClick={handleDownloadCodex} className="flex items-center gap-2 pl-4 pr-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                <img src={CODEX_LOGO_WHITE_URI} alt="" draggable={false} className="w-5 h-5 object-contain shrink-0" />Download Codex ZIP
+              </button>
+            ) : (
+              <button onClick={handleDownloadAll} className="flex items-center gap-2 pl-4 pr-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.97]">
+                <img src={CLAUDE_LOGO_WHITE_URI} alt="" draggable={false} className="w-5 h-5 object-contain shrink-0" />{generatedFiles.length > 1 ? 'Download ZIP' : 'Download .md'}
+              </button>
+            )}
+          </div>
+          {codexExportError && (
+            <div className="mt-3 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-red-400 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{codexExportError}</span>
+            </div>
+          )}
+        </div>
+      </AnimatedSection>
+      {generatedFiles.length > 1 && config.target !== 'codex' && (
+        <AnimatedSection delay={100}>
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {generatedFiles.map((file, i) => (
+              <button key={i} onClick={() => setActiveFile(i)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${activeFile === i ? 'bg-white/[0.08] text-white border border-white/[0.1]' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03] border border-transparent'}`}>
+                <FileText className="w-3 h-3" />{file.filename}
+              </button>
+            ))}
+          </div>
+        </AnimatedSection>
+      )}
+      {generatedFiles.length > 0 && (
+        <AnimatedSection delay={200}>
+          <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
+              <div className="text-xs text-gray-500 font-medium">{config.target === 'codex' ? 'Preview — SKILL.md content (packaged in ZIP on download)' : 'Preview'}</div>
+              <div className="flex items-center gap-1.5">
+                {config.target === 'codex' ? (
+                  <button onClick={() => handleCopy(getNormalizedCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                    {copied === 'codex-skill-preview' ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy SKILL.md</span></>}
+                  </button>
+                ) : (<>
+                  <button onClick={() => handleCopy(generatedFiles[activeFile].content, `file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                    {copied === `file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>}
+                  </button>
+                  <button onClick={() => handleCopy(generatedFiles[activeFile].content, `raw-file-${activeFile}`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                    {copied === `raw-file-${activeFile}` ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Code className="w-3.5 h-3.5" /><span>Copy raw</span></>}
+                  </button>
+                  <button onClick={() => handleDownloadSingle(generatedFiles[activeFile])} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all"><Download className="w-3.5 h-3.5" /></button>
+                </>)}
+              </div>
+            </div>
+            <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">
+              {renderMarkdownPreview(config.target === 'codex' ? getNormalizedCodexSkillMd() : generatedFiles[activeFile].content)}
+            </div>
+          </div>
+        </AnimatedSection>
+      )}
+      {videoVisible && (
+        <AnimatedSection delay={0}>
+          <div ref={videoSectionRef} className="relatch-video-section rounded-2xl overflow-hidden border border-white/[0.08] bg-black/30">
+            <div className="px-4 py-2.5 flex items-center gap-2.5 bg-white/[0.025] border-b border-white/[0.06]">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+              </span>
+              <span className="text-xs font-medium text-gray-300 tracking-wide">Watch Setup Guide</span>
+            </div>
+            <video
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              className="w-full block"
+              src={config.target === 'codex'
+                ? '/videos/codex-setup.mp4'
+                : '/videos/claude-setup.mp4'}
+            />
+          </div>
+
+          <div className="mt-3 rounded-xl border border-white/[0.05] overflow-hidden bg-white/[0.015]">
+            <button
+              type="button"
+              onClick={() => setShowInstructions(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.025] transition-colors group"
+              aria-expanded={showInstructions}
+            >
+              <span className="text-xs font-medium text-gray-500 group-hover:text-gray-400 transition-colors">
+                Need written instructions?
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-200 ${showInstructions ? 'rotate-180' : ''}`} />
+            </button>
+            {showInstructions && (
+              <div className="px-4 pb-4 pt-2 space-y-2.5 border-t border-white/[0.04]">
+                {config.target === 'codex' ? (
+                  [
+                    { step: '1', text: 'Download the ZIP above' },
+                    { step: '2', text: "Unzip. You'll get a folder containing SKILL.md and agents/openai.yaml" },
+                    { step: '3', text: "Copy that folder into .agents/skills/ at your repo root (create the directory if it doesn't exist)" },
+                    { step: '4', text: "Run codex in your repo. The skill auto-activates when the description's trigger contexts match" },
+                  ].map(item => (
+                    <div key={item.step} className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-md bg-violet-500/15 text-violet-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                      <p className="text-sm text-gray-400 leading-relaxed">{item.text}</p>
+                    </div>
+                  ))
+                ) : (
+                  [
+                    { step: '1', text: 'Download your skill file above' },
+                    { step: '2', text: 'Open Claude → Customize section' },
+                    { step: '3', text: 'Go to Skills → tap the + icon to upload' },
+                    { step: '4', text: 'Select your downloaded .md file. Claude now works exactly like you do.' },
+                  ].map(item => (
+                    <div key={item.step} className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
+                      <p className="text-sm text-gray-400 leading-relaxed">{item.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </AnimatedSection>
+      )}
+      </>)}
+    </div>
+  );
+}
+
+const DEFAULT_CONFIG: SkillConfig = {
+  skillName: '', description: '', customNotes: '',
+  target: 'claude',
+  categories: {
+    personality: { enabled: true, label: 'Personality & Style', description: 'Communication tone and style', icon: '🧠', priority: 'high' },
+    knowledge: { enabled: true, label: 'Knowledge Base', description: 'Domain knowledge and reference data', icon: '📚', priority: 'medium' },
+    instructions: { enabled: true, label: 'Instructions', description: 'Rules and behavioral guidelines', icon: '📋', priority: 'high' },
+    examples: { enabled: true, label: 'Examples', description: 'Templates and sample outputs', icon: '💡', priority: 'medium' },
+    context: { enabled: true, label: 'Context', description: 'Background information', icon: '🔍', priority: 'medium' },
+    preferences: { enabled: true, label: 'Preferences', description: 'User preferences and settings', icon: '⚙️', priority: 'high' },
+  },
+};
+
+const STEPS: { key: AppStep; label: string; icon: React.ReactNode; desc: string }[] = [
+  { key: 'agent', label: 'Choose Agent', icon: <Brain className="w-4 h-4" />, desc: 'Pick your AI agent' },
+  { key: 'upload', label: 'Upload', icon: <Upload className="w-4 h-4" />, desc: 'Add your files' },
+  { key: 'organize', label: 'Organize', icon: <FolderKanban className="w-4 h-4" />, desc: 'Categorize data' },
+  { key: 'configure', label: 'Configure', icon: <Settings className="w-4 h-4" />, desc: 'Skill options' },
+  { key: 'generate', label: 'Generate', icon: <Sparkles className="w-4 h-4" />, desc: 'Export .md' },
+];
+
+
+
+function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
+  agent: 'claude' | 'codex';
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      else if (e.key === 'Enter') onConfirm();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    confirmBtnRef.current?.focus();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onCancel, onConfirm]);
+
+  const name = agent === 'claude' ? 'Claude' : 'Codex';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+      <div
+        className="relatch-overlay-enter absolute inset-0 bg-black/55"
+        style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+        onClick={onCancel}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="relatch-confirm-title"
+        className="relatch-popup-enter relative w-full max-w-sm rounded-2xl border border-white/[0.08] p-7 text-center"
+        style={{
+          background: 'rgba(12,16,24,0.92)',
+          boxShadow: '0 0 40px rgba(58,123,255,0.18)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
+        }}
+      >
+        <h2 id="relatch-confirm-title" className="text-lg font-bold text-white tracking-tight">Confirm selection</h2>
+        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed max-w-[280px] mx-auto">
+          You're selecting <span className="text-white font-medium">{name}</span>. Once locked, you won't be able to switch agents. You can reset the session to choose a different agent.
+        </p>
+        <div className="flex items-center justify-center gap-2.5 mt-5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-xl text-[12px] font-medium text-white/80 bg-transparent border border-white/[0.08] hover:bg-white/[0.04] hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmBtnRef}
+            type="button"
+            onClick={onConfirm}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+            style={{
+              background: 'linear-gradient(180deg, #3b82ff, #2563ff)',
+              boxShadow: '0 0 24px rgba(59,130,255,0.28)',
+            }}
+          >
+            Confirm
+            <Lock className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function AgentSelector({ target, locked, onConfirm, requireAuth }: {
+  target: 'claude' | 'codex';
+  locked: boolean;
+  onConfirm: (t: 'claude' | 'codex') => void;
+  requireAuth: (action: () => void) => void;
+}) {
+  const [pending, setPending] = useState<'claude' | 'codex' | null>(null);
+
+  const handleSelect = (t: 'claude' | 'codex') => {
+    if (locked) return;
+    requireAuth(() => setPending(t));
+  };
+
+  const handleConfirm = () => {
+    if (!pending) return;
+    const choice = pending;
+    setPending(null);
+    onConfirm(choice);
+  };
+
+  const isClaudeSelected = target === 'claude';
+  const isCodexSelected = target === 'codex';
+
+  return (
+    <div className="relative">
+      <p className="text-center text-[13px] text-gray-400 mb-6 max-w-md mx-auto leading-relaxed px-2">
+        Select the AI agent you want to build skills for.
+        <span className="block text-gray-500 mt-0.5">This choice will be locked for this session.</span>
+      </p>
+
+      <div className="flex flex-col sm:flex-row gap-3.5 justify-center items-stretch max-w-2xl mx-auto">
+        {/* Claude card */}
+        <button
+          type="button"
+          aria-pressed={isClaudeSelected}
+          aria-label="Select Claude as export target"
+          disabled={locked && !isClaudeSelected}
+          onClick={() => handleSelect('claude')}
+          className={`relatch-claude-card relative flex-1 min-w-0 flex flex-col items-center justify-center text-center px-5 pt-7 pb-6 rounded-2xl border bg-gradient-to-b from-white/[0.03] to-white/[0.01] transition-all duration-300 ${locked ? 'is-locked' : ''} ${
+            isClaudeSelected
+              ? 'border-blue-500/60 shadow-[0_0_30px_-8px_rgba(59,130,255,0.45)]'
+              : locked
+                ? 'border-white/[0.07]'
+                : 'border-white/[0.07] hover:border-white/[0.14] hover:bg-white/[0.04]'
+          } ${locked && !isClaudeSelected ? 'opacity-40 cursor-not-allowed' : locked ? 'cursor-default' : 'cursor-pointer'}`}
+        >
+          <span className={`absolute top-3.5 right-3.5 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isClaudeSelected ? 'border-blue-500 bg-blue-500/15' : 'border-white/15'}`}>
+            {isClaudeSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+          </span>
+
+          <div className="h-[78px] w-[78px] flex items-center justify-center mb-4 mt-1.5">
+            <img
+              src={CLAUDE_LOGO_URI}
+              alt="Claude"
+              draggable={false}
+              className="relatch-claude-logo w-full h-full object-contain select-none"
+              style={{ transformOrigin: 'center' }}
+            />
+          </div>
+
+          <p className="text-[15px] font-semibold text-white leading-none">Claude</p>
+          <p className="text-[11px] text-gray-400 mt-2 leading-none">Claude Skills</p>
+          <p className="text-[10px] font-mono text-gray-600 mt-2 leading-none">.md skill file</p>
+        </button>
+
+        {/* Codex card */}
+        <button
+          type="button"
+          aria-pressed={isCodexSelected}
+          aria-label="Select Codex as export target"
+          disabled={locked && !isCodexSelected}
+          onClick={() => handleSelect('codex')}
+          className={`relatch-codex-card relative flex-1 min-w-0 flex flex-col items-center justify-center text-center px-5 pt-7 pb-6 rounded-2xl border bg-gradient-to-b from-white/[0.03] to-white/[0.01] transition-all duration-300 ${locked ? 'is-locked' : ''} ${
+            isCodexSelected
+              ? 'border-blue-500/60 shadow-[0_0_30px_-8px_rgba(59,130,255,0.45)]'
+              : locked
+                ? 'border-white/[0.07]'
+                : 'border-white/[0.07] hover:border-white/[0.14] hover:bg-white/[0.04]'
+          } ${locked && !isCodexSelected ? 'opacity-40 cursor-not-allowed' : locked ? 'cursor-default' : 'cursor-pointer'}`}
+        >
+          <span className={`absolute top-3.5 right-3.5 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isCodexSelected ? 'border-blue-500 bg-blue-500/15' : 'border-white/15'}`}>
+            {isCodexSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+          </span>
+
+          <div className="h-[78px] w-[78px] mb-4 mt-1.5" role="img" aria-label="Codex">
+            <div className="relatch-codex-logo-container w-full h-full">
+              <img src={CODEX_BASE_URI} alt="" draggable={false} className="relatch-codex-base" />
+              <img src={CODEX_EYE_URI} alt="" draggable={false} className="relatch-codex-eye" />
+              <img src={CODEX_UNDERSCORE_URI} alt="" draggable={false} className="relatch-codex-underscore" />
+            </div>
+          </div>
+
+          <p className="text-[15px] font-semibold text-white leading-none">Codex</p>
+          <p className="text-[11px] text-gray-400 mt-2 leading-none">Codex Skills</p>
+          <p className="text-[10px] font-mono text-gray-600 mt-2 leading-none">SKILL.md + agents.yaml</p>
+        </button>
+      </div>
+
+      <div className="max-w-2xl mx-auto mt-5 flex items-start gap-2.5 px-4 py-3 rounded-xl border border-blue-500/15 bg-blue-500/[0.04]">
+        <Info className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+        <p className="text-[11px] text-gray-300 leading-relaxed">
+          {locked
+            ? <>Agent locked for this session. Reset the session to choose a different agent.</>
+            : <>Once locked, you won't be able to switch agents. You can reset the session to choose a different agent.</>}
+        </p>
+      </div>
+
+      {pending && (
+        <ConfirmAgentPopup
+          agent={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={handleConfirm}
+        />
+      )}
+    </div>
+  );
+}
+
+function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
+  const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#050a12] overflow-y-auto flex items-center justify-center px-4 py-10">
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
+        <div className="absolute top-[40%] right-[-10%] w-[400px] h-[400px] bg-gradient-to-l from-blue-600/[0.03] to-transparent rounded-full blur-[80px]" />
+        <div className="absolute bottom-[-5%] left-[-5%] w-[500px] h-[300px] bg-gradient-to-tr from-blue-500/[0.025] to-transparent rounded-full blur-[80px]" />
+      </div>
+      <div className="fixed inset-0 pointer-events-none opacity-[0.012]" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`, backgroundSize: '64px 64px' }} />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="fixed top-4 right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-gray-400 hover:text-white transition-colors"
+      >
+        <X className="w-4 h-4" />
+      </button>
+      <div className="relative z-10 w-full max-w-md flex flex-col items-center">
+        <div className="mb-6 text-center flex flex-col items-center">
+          <img src="/logo.png" alt="Relatch" className="w-14 h-14 mb-3 select-none" draggable={false} />
+          <h1 className="text-2xl font-bold text-white tracking-tight">Welcome to Relatch</h1>
+          <p className="text-[12px] text-gray-400 mt-1.5">Sign up or sign in to continue. Skills that make AI yours.</p>
+        </div>
+        {view === 'sign-up' ? (
+          <SignUp routing="hash" />
+        ) : (
+          <SignIn routing="hash" />
+        )}
+        <button
+          type="button"
+          onClick={() => setView(view === 'sign-up' ? 'sign-in' : 'sign-up')}
+          className="mt-5 text-[12px] text-blue-400 hover:text-blue-300 font-medium transition-colors"
+        >
+          {view === 'sign-up' ? 'Already have an account? Sign in' : 'New here? Create an account'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const { isLoaded, isSignedIn } = useUser();
+
+  const [currentStep, setCurrentStep] = useState<AppStep>('agent');
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [config, setConfig] = useState<SkillConfig>(DEFAULT_CONFIG);
+  const [targetLocked, setTargetLocked] = useState<boolean>(false);
+  // Persists the file-content signature for which the video setup-guide has already
+  // been revealed. Survives SkillOutput unmount/remount across step navigation,
+  // so going Back→Forward without editing keeps the video visible. Any change to
+  // skill name / notes / categories / target → new signature → flow resets.
+  const [videoSeenSignature, setVideoSeenSignature] = useState<string | null>(null);
+  const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
+
+  const stepIndex = STEPS.findIndex(s => s.key === currentStep);
+  const canGoNext =
+    currentStep === 'agent' ? targetLocked :
+    currentStep === 'upload' ? files.length > 0 :
+    currentStep === 'configure' ? config.skillName.trim().length > 0 :
+    true;
+  const missingSkillName = currentStep === 'configure' && config.skillName.trim().length === 0;
+
+  const handleAgentConfirm = useCallback((t: 'claude' | 'codex') => {
+    setConfig(prev => ({ ...prev, target: t }));
+    setTargetLocked(true);
+    setCurrentStep('upload');
+  }, []);
+
+  const handleFilesAdded = useCallback((newFiles: UploadedFile[]) => setFiles(prev => [...prev, ...newFiles]), []);
+  const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
+  const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
+  const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
+
+  useEffect(() => { if (isSignedIn) setAuthGateView(null); }, [isSignedIn]);
+
+  const requireAuth = useCallback((action: () => void) => {
+    if (!isLoaded) return;
+    if (isSignedIn) {
+      action();
+    } else {
+      setAuthGateView('sign-up');
+    }
+  }, [isLoaded, isSignedIn]);
+
+  const goNext = () => {
+    requireAuth(() => {
+      if (stepIndex < STEPS.length - 1) setCurrentStep(STEPS[stepIndex + 1].key);
+    });
+  };
+  const goPrev = () => { if (stepIndex > 0) setCurrentStep(STEPS[stepIndex - 1].key); };
+
+  if (!isLoaded) {
+    return <div className="min-h-screen bg-[#050a12]" />;
+  }
+
+  return (
+    <>
+    {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} />}
+    <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
+        <div className="absolute top-[40%] right-[-10%] w-[400px] h-[400px] bg-gradient-to-l from-blue-600/[0.03] to-transparent rounded-full blur-[80px]" />
+        <div className="absolute bottom-[-5%] left-[-5%] w-[500px] h-[300px] bg-gradient-to-tr from-blue-500/[0.025] to-transparent rounded-full blur-[80px]" />
+      </div>
+      <div className="fixed inset-0 pointer-events-none opacity-[0.012]" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`, backgroundSize: '64px 64px' }} />
+      <div className="relative z-10">
+        <header className="border-b border-white/[0.05]">
+          <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
+           <div className="flex items-center gap-2">
+  <img
+    src="/logo.png"
+    alt="Relatch Logo"
+    className="w-9 h-9 object-contain translate-x-[1px]"
+  />
+  <div>
+    <h1 className="text-sm font-bold text-white tracking-tight leading-none">
+      Relatch
+    </h1>
+    <p className="text-[10px] text-gray-500 leading-none mt-0.5">
+      Skills that make AI yours.
+    </p>
+  </div>
+</div>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]">
+                <Shield className="w-3 h-3 text-emerald-400" />
+                <span className="text-[10px] text-gray-400 font-medium">Private by design.</span>
+              </div>
+              <Show when="signed-out">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAuthGateView('sign-in')}
+                    className="text-[11px] text-gray-400 hover:text-white transition-colors font-medium px-3 py-1.5 rounded-lg hover:bg-white/[0.05] border border-white/[0.05]"
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthGateView('sign-up')}
+                    className="text-[11px] text-white font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors"
+                  >
+                    Sign up
+                  </button>
+                </div>
+              </Show>
+              <Show when="signed-in">
+                <UserButton
+                  afterSignOutUrl="/"
+                  appearance={{
+                    elements: {
+                      avatarBox: "w-7 h-7",
+                    },
+                  }}
+                />
+              </Show>
+            </div>
+          </div>
+        </header>
+        {(currentStep === 'agent' || (currentStep === 'upload' && files.length === 0)) && (
+          <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
+            <AnimatedSection delay={100}>
+              <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
+                Your Work.<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Built Into Every Response.</span>
+              </h2>
+            </AnimatedSection>
+            <AnimatedSection delay={200}>
+              <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed mb-8">Every document holds a pattern. Relatch finds it, structures it, and turns it into a skill file your AI follows every single time. Under a minute.</p>
+            </AnimatedSection>
+            <AnimatedSection delay={300}>
+              <div className="flex flex-wrap justify-center gap-3 mb-10">
+                {[
+                  { icon: <FileText className="w-3.5 h-3.5" />, label: 'PDF, TXT, MD' },
+                  { icon: <FolderKanban className="w-3.5 h-3.5" />, label: 'JSON, YAML, CSV' },
+                  { icon: <Upload className="w-3.5 h-3.5" />, label: 'HTML, XML' },
+                  { icon: <Code className="w-3.5 h-3.5" />, label: 'JS, TS, PY' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.025] border border-white/[0.05] text-xs text-gray-400">
+                    <span className="text-blue-400">{item.icon}</span>{item.label}
+                  </div>
+                ))}
+              </div>
+            </AnimatedSection>
+          </div>
+        )}
+        <div className="max-w-5xl mx-auto px-6 py-5">
+          <div className="flex items-center justify-between mb-7">
+            {STEPS.map((step, i) => (
+              <div key={step.key} className="flex items-center flex-1 last:flex-none">
+                <button onClick={() => { if (i <= stepIndex || (i === stepIndex + 1 && canGoNext)) setCurrentStep(step.key); }} className={`flex items-center gap-2 group transition-all ${i <= stepIndex ? 'cursor-pointer' : 'cursor-default'}`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-400 ${i === stepIndex ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25' : i < stepIndex ? 'bg-blue-500/15 text-blue-400' : 'bg-white/[0.03] text-gray-600 border border-white/[0.05]'}`}>{step.icon}</div>
+                  <div className="hidden sm:block">
+                    <p className={`text-xs font-semibold transition-colors leading-none ${i === stepIndex ? 'text-white' : i < stepIndex ? 'text-gray-300' : 'text-gray-600'}`}>{step.label}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5 leading-none">{step.desc}</p>
+                  </div>
+                </button>
+                {i < STEPS.length - 1 && <div className="flex-1 mx-3 hidden sm:block"><div className={`h-px transition-colors duration-300 ${i < stepIndex ? 'bg-blue-500/25' : 'bg-white/[0.05]'}`} /></div>}
+                {i < STEPS.length - 1 && <div className="mx-1.5 sm:hidden"><ChevronRight className={`w-3.5 h-3.5 ${i < stepIndex ? 'text-blue-500/40' : 'text-gray-800'}`} /></div>}
+              </div>
+            ))}
+          </div>
+          <div className="max-w-3xl mx-auto">
+            <div key={currentStep}>
+              {currentStep === 'agent' && (
+                <AnimatedSection>
+                  <AgentSelector
+                    target={config.target}
+                    locked={targetLocked}
+                    onConfirm={handleAgentConfirm}
+                    requireAuth={requireAuth}
+                  />
+                </AnimatedSection>
+              )}
+              {currentStep === 'upload' && (
+                <FileUploadZone
+                  files={files}
+                  onFilesAdded={handleFilesAdded}
+                  onRemoveFile={handleRemoveFile}
+                  onSampleLoad={handleAddSample}
+                  target={config.target}
+                />
+              )}
+              {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
+              {currentStep === 'configure' && <SkillConfigurator config={config} files={files} onUpdateConfig={setConfig} />}
+              {currentStep === 'generate' && <SkillOutput files={files} config={config} videoSeenSignature={videoSeenSignature} setVideoSeenSignature={setVideoSeenSignature} />}
+            </div>
+            <div className="flex items-center justify-between mt-7 pb-10">
+              <button onClick={goPrev} disabled={stepIndex === 0} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all ${stepIndex === 0 ? 'opacity-0 pointer-events-none' : 'text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05]'}`}>
+                <ArrowLeft className="w-3.5 h-3.5" />Back
+              </button>
+              {currentStep !== 'generate' && (
+                <button title={currentStep === 'agent' && !targetLocked ? 'Select an agent and confirm to continue' : missingSkillName ? 'Enter a skill name to continue' : ''} onClick={goNext} disabled={!canGoNext} className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-medium transition-all active:scale-[0.97] ${canGoNext ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/15 hover:shadow-blue-500/25' : 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]'}`}>
+                  {currentStep === 'configure' ? 'Generate Skill' : 'Continue'}<ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <footer className="border-t border-white/[0.03]">
+          <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+            <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
+            <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
+          </div>
+        </footer>
+      </div>
+    </div>
+    </>
+  );
+}
