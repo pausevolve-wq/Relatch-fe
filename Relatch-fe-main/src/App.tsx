@@ -1620,33 +1620,32 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
   const slug = toSkillSlug(config.skillName);
   const isValidName = config.skillName.trim().length > 0;
 
+  const nameSectionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    nameSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
   return (
     <div className="space-y-6">
       <AnimatedSection>
-        <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
+        <div ref={nameSectionRef} className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><Tag className="w-4 h-4 text-blue-400" /></div>
             <div><h3 className="text-sm font-semibold text-white">Name your skill</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Give your skill a name. This becomes the folder slug in your Codex skills directory.' : 'Give your skill a name. This is how Claude will remember it.'}</p></div>
           </div>
-          <div className="grid grid-cols-1 gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">Skill Name <span className="text-red-400">*</span></label>
-              <input type="text" value={config.skillName} onChange={(e) => updateField('skillName', e.target.value)} placeholder="e.g., My Personal Assistant" className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all text-sm outline-none" />
-              <p className="mt-2 text-[11px] text-gray-500">{config.target === 'codex' ? 'Your skill folder will be named after this slug. Copy it into .agents/skills/ in your repo.' : 'Your skill will be saved as a .md file. Drop it straight into Claude Projects.'}</p>
-              {isValidName && (
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Folder:' : 'Filename:'}</span>
-                  <code className="text-[11px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md font-mono border border-blue-500/15">{config.target === 'codex' ? `${slug}/SKILL.md` : `${slug}.md`}</code>
-                </div>
-              )}
-              {config.skillName.trim() && !/^[a-z0-9\s-]+$/i.test(config.skillName) && (
-                <div className="mt-2 flex items-center gap-1.5 text-amber-400"><AlertCircle className="w-3 h-3" /><span className="text-[11px]">Special characters will be removed from the filename</span></div>
-              )}
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">Description</label>
-              <textarea value={config.description} onChange={(e) => updateField('description', e.target.value)} placeholder="Brief description of what this skill does..." rows={2} className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all resize-none text-sm outline-none" />
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">Skill Name <span className="text-red-400">*</span></label>
+            <input type="text" value={config.skillName} onChange={(e) => updateField('skillName', e.target.value)} placeholder="e.g., My Personal Assistant" className="w-full px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all text-sm outline-none" />
+            <p className="mt-2 text-[11px] text-gray-500">{config.target === 'codex' ? 'Your skill folder will be named after this slug. Copy it into .agents/skills/ in your repo.' : 'Your skill will be saved as a .md file. Drop it straight into Claude Projects.'}</p>
+            {isValidName && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Folder:' : 'Filename:'}</span>
+                <code className="text-[11px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md font-mono border border-blue-500/15">{config.target === 'codex' ? `${slug}/SKILL.md` : `${slug}.md`}</code>
+              </div>
+            )}
+            {config.skillName.trim() && !/^[a-z0-9\s-]+$/i.test(config.skillName) && (
+              <div className="mt-2 flex items-center gap-1.5 text-amber-400"><AlertCircle className="w-3 h-3" /><span className="text-[11px]">Special characters will be removed from the filename</span></div>
+            )}
           </div>
         </div>
       </AnimatedSection>
@@ -1654,10 +1653,10 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
       <AnimatedSection delay={100}>
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-9 h-9 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-violet-400" /></div>
+            <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-blue-400" /></div>
             <div><h3 className="text-sm font-semibold text-white">{config.target === 'codex' ? 'Anything Codex should always follow?' : 'Anything Claude should always remember?'}</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Rules and context injected into your Codex skill as highest-priority instructions' : 'Rules, quirks, preferences you didn\'t upload — type them here directly'}</p></div>
           </div>
-          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={config.target === 'codex' ? "Rules Codex should always apply when this skill is active...\n\nExamples:\n• Always check for existing tests before adding new ones\n• Never modify package.json without confirmation\n• Use the project's existing error handling pattern\n• Default to TypeScript strict mode" : "Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-violet-500/25 focus:border-violet-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
+          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={config.target === 'codex' ? "Rules Codex should always apply when this skill is active...\n\nExamples:\n• Always check for existing tests before adding new ones\n• Never modify package.json without confirmation\n• Use the project's existing error handling pattern\n• Default to TypeScript strict mode" : "Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
           <p className="mt-2 text-[11px] text-gray-600">These go at the top of your {config.target === 'codex' ? 'Codex skill file' : 'skill file'} as the highest-priority instructions.</p>
         </div>
       </AnimatedSection>
@@ -1672,17 +1671,19 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
               const count = fileCounts[key] || 0;
               return (
                 <AnimatedSection key={key} delay={(idx + 4) * 60}>
-                  <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${cat.enabled ? 'bg-white/[0.025] border-white/[0.06]' : 'bg-white/[0.008] border-white/[0.03] opacity-40'}`}>
-                    <button onClick={() => toggleCategory(key)} className={`relative w-9 h-5 rounded-full transition-all duration-300 shrink-0 ${cat.enabled ? 'bg-blue-500' : 'bg-white/[0.08]'}`}>
-                      <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-300 ${cat.enabled ? 'left-[18px]' : 'left-0.5'}`} />
-                    </button>
-                    <span className={`text-${meta.color}-400`}>{meta.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2"><span className="text-sm font-medium text-white">{cat.label}</span>{count > 0 && <span className="text-[11px] text-gray-500 font-mono">{count}</span>}</div>
-                      <p className="text-[11px] text-gray-600">{cat.description}</p>
+                  <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${cat.enabled ? 'bg-white/[0.025] border-white/[0.06]' : 'bg-white/[0.008] border-white/[0.03] opacity-40'}`}>
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <button onClick={() => toggleCategory(key)} className={`relative w-9 h-5 rounded-full transition-all duration-300 shrink-0 ${cat.enabled ? 'bg-blue-500' : 'bg-white/[0.08]'}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-300 ${cat.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+                      </button>
+                      <span className={`text-${meta.color}-400 shrink-0`}>{meta.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2"><span className="text-sm font-medium text-white">{cat.label}</span>{count > 0 && <span className="text-[11px] text-gray-500 font-mono">{count}</span>}</div>
+                        <p className="text-[11px] text-gray-600">{cat.description}</p>
+                      </div>
                     </div>
                     {cat.enabled && (
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1 pl-12 sm:pl-0 sm:justify-end">
                         {(['high', 'medium', 'low'] as const).map(p => (
                           <button key={p} onClick={() => updatePriority(key, p)} className={`px-2 py-1 text-[11px] rounded-lg font-medium transition-all ${cat.priority === p ? (p === 'high' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/25' : p === 'medium' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/25' : 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/25') : 'text-gray-600 hover:text-gray-400'}`}>{PRIORITY_LABELS[p]}</button>
                         ))}
@@ -1741,6 +1742,20 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     return () => { if (link.parentNode) link.parentNode.removeChild(link); };
   }, [generatedFiles, config.target]);
 
+  // Remount guard: if videoVisible is already true on mount (persisted signature),
+  // reveal immediately without animation or scroll.
+  useEffect(() => {
+    if (videoVisible && prevVideoVisibleRef.current === null) {
+      const el = videoSectionRef.current;
+      if (el) {
+        el.setAttribute('data-reveal', 'true');
+        el.style.animation = 'none';
+        el.style.opacity = '1';
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount only
+
   // Smooth-scroll the video guide into view only on the false→true transition
   // (i.e. the user just clicked Download). Returning to Step 5 with the video
   // already revealed must NOT auto-scroll — they should land where they left.
@@ -1749,9 +1764,17 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     prevVideoVisibleRef.current = videoVisible;
     if (prev === null) return; // first render in this mount — no transition
     if (videoVisible && !prev) {
+      // Phase 1: scroll the video section into view immediately (no delay)
       requestAnimationFrame(() => {
         videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
+      // Phase 2: trigger the reveal animation only after scroll has settled.
+      // smooth-scroll takes ~400–600ms; 520ms gives a reliable post-scroll window.
+      const revealTimer = setTimeout(() => {
+        const el = videoSectionRef.current;
+        if (el) el.setAttribute('data-reveal', 'true');
+      }, 520);
+      return () => clearTimeout(revealTimer);
     }
   }, [videoVisible]);
 
@@ -2284,7 +2307,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       )}
       {videoVisible && (
         <AnimatedSection delay={0}>
-          <div ref={videoSectionRef} className="relatch-video-section rounded-2xl overflow-hidden border border-white/[0.08] bg-black/30">
+          <div ref={videoSectionRef} className="relatch-video-section rounded-2xl overflow-hidden border border-white/[0.08] bg-black/30" data-reveal="false">
             <div className="px-4 py-2.5 flex items-center gap-2.5 bg-white/[0.025] border-b border-white/[0.06]">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
