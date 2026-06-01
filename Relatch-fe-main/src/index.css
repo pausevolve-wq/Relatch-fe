@@ -123,8 +123,10 @@
   .relatch-codex-card.is-tapped .relatch-codex-eye,
   .relatch-popup-enter,
   .relatch-overlay-enter,
-  .relatch-video-section {
+  .relatch-video-section,
+  .relatch-video-section[data-reveal="true"] {
     animation: none !important;
+    opacity: 1 !important;
   }
 }
 
@@ -134,8 +136,14 @@
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Default state: section is invisible, no animation running */
 .relatch-video-section {
-  animation: relatchVideoReveal 440ms cubic-bezier(0.22, 0.88, 0.26, 1) forwards;
+  opacity: 0;
+}
+
+/* Reveal fires only when JS sets data-reveal="true" (after scroll settles) */
+.relatch-video-section[data-reveal="true"] {
+  animation: relatchVideoReveal 600ms cubic-bezier(0.22, 0.88, 0.26, 1) forwards;
 }
 
 .relatch-video-section video::-webkit-media-controls {
