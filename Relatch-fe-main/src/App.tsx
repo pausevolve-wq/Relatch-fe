@@ -8,10 +8,12 @@ import {
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
   Tag
 } from 'lucide-react';
-import { Show, SignIn, SignUp, UserButton, useUser } from "@clerk/react";
+import { Show, SignIn, SignUp, UserButton, useUser, useAuth } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+let _getToken: (() => Promise<string | null>) | null = null;
 
 type FileCategory = 'personality' | 'knowledge' | 'instructions' | 'examples' | 'context' | 'preferences';
 type AppStep = 'agent' | 'upload' | 'organize' | 'configure' | 'generate';
@@ -226,9 +228,13 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string 
     const base64 = arrayBufferToBase64(buffer);
     const mimeType = file.type || 'application/pdf';
 
+    const token = _getToken ? await _getToken() : null;
     const response = await fetch(OCR_PROXY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ base64, mimeType, fileName: file.name }),
     });
 
@@ -1154,9 +1160,13 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
       ? ((detectedDomain as any)?.codexShape || templateToShape((detectedDomain as any)?.template))
       : undefined;
 
+    const token = _getToken ? await _getToken() : null;
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         rawText,
         category,
@@ -1654,7 +1664,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
         <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-blue-400" /></div>
-            <div><h3 className="text-sm font-semibold text-white">{config.target === 'codex' ? 'Anything Codex should always follow?' : 'Anything Claude should always remember?'}</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Rules and context injected into your Codex skill as highest-priority instructions' : 'Rules, quirks, preferences you didn\'t upload , type them here directly'}</p></div>
+            <div><h3 className="text-sm font-semibold text-white">{config.target === 'codex' ? 'Anything Codex should always follow?' : 'Anything Claude should always remember?'}</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Rules and context injected into your Codex skill as highest-priority instructions' : 'Rules, quirks, preferences you didn\'t upload — type them here directly'}</p></div>
           </div>
           <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={config.target === 'codex' ? "Rules Codex should always apply when this skill is active...\n\nExamples:\n• Always check for existing tests before adding new ones\n• Never modify package.json without confirmation\n• Use the project's existing error handling pattern\n• Default to TypeScript strict mode" : "Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
           <p className="mt-2 text-[11px] text-gray-600">These go at the top of your {config.target === 'codex' ? 'Codex skill file' : 'skill file'} as the highest-priority instructions.</p>
@@ -2649,6 +2659,8 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
 
 export default function App() {
   const { isLoaded, isSignedIn } = useUser();
+  const { getToken } = useAuth();
+  useEffect(() => { _getToken = getToken; }, [getToken]);
 
   const [currentStep, setCurrentStep] = useState<AppStep>('agent');
   const [files, setFiles] = useState<UploadedFile[]>([]);
