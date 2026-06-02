@@ -153,16 +153,35 @@
   display: none !important;
 }
 
+/* Clerk color overrides — appearance API doesn't reach all nested elements */
+.cl-userButtonPopoverFooter a,
+.cl-userButtonPopoverFooter span { color: #64748b !important; }
+
+.cl-footer a,
+.cl-footer span { color: #64748b !important; }
+
+.cl-userPreviewMainIdentifier { color: #F8FAFC !important; }
+.cl-userPreviewSecondaryIdentifier { color: #94A3B8 !important; }
+.cl-userButtonPopoverActionButtonText { color: #F8FAFC !important; }
+.cl-userButtonPopoverActionButtonIcon { color: #94A3B8 !important; }
+.cl-connectedAccountButtonText { color: #F8FAFC !important; }
+.cl-connectedAccountUserIdentifier { color: #94A3B8 !important; }
+
 /* Clerk branding footer — "for Relatch" subordinate line */
+.cl-userButtonPopoverFooter {
+  flex-wrap: wrap !important;
+}
+
 .cl-userButtonPopoverFooter::after {
   content: 'for Relatch';
   flex: 0 0 100%;
   text-align: center;
   color: #475569;
   font-size: 10px;
-  font-family: 'Inter', sans-serif;
-  letter-spacing: 0.05em;
-  padding-bottom: 4px;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+  padding-bottom: 3px;
 }
 
 .cl-footer::after {
@@ -171,9 +190,9 @@
   text-align: center;
   color: #475569;
   font-size: 10px;
-  font-family: 'Inter', sans-serif;
-  letter-spacing: 0.05em;
-  padding-bottom: 4px;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  margin-top: 3px;
 }
 
 @keyframes processingMsgIn {
