@@ -1359,10 +1359,24 @@ function AnimatedSection({ children, className = '', delay = 0 }: { children: Re
   );
 }
 
+const PROCESSING_MESSAGES = [
+  'Categorizing your document...',
+  'Parsing your document...',
+  'Building logic flows...',
+  'Enriching your skill file...',
+  'Cleaning up the errors...',
+];
+
 function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex' }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusIdx, setStatusIdx] = useState(0);
+  useEffect(() => {
+    if (!isProcessing) { setStatusIdx(0); return; }
+    const id = setInterval(() => setStatusIdx(i => (i + 1) % PROCESSING_MESSAGES.length), 1800);
+    return () => clearInterval(id);
+  }, [isProcessing]);
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     setIsProcessing(true); setError(null);
@@ -1464,7 +1478,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
               <div className="flex flex-col items-center gap-3 text-blue-400">
                 <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                 <span className="text-sm font-medium">Reading your files...</span>
-                <span className="text-xs text-gray-500">Heavier files take a few extra seconds</span>
+                <span key={statusIdx} className="text-xs text-gray-500 processing-msg-in">{PROCESSING_MESSAGES[statusIdx]}</span>
               </div>
             </div>
           )}
