@@ -1978,7 +1978,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     const domainList = domains.length === 2
       ? `${domains[0]} and ${domains[1]}`
       : `${domains.slice(0, -1).join(', ')} and ${domains[domains.length - 1]}`;
-    const skillMdContent = `---\nname: "${slug}"\ndescription: "A combined skill integrating ${domainList} across ${generatedFiles.length} source documents."\n---`;
+    const skillMdContent = `---\nname: "${slug}"\ndescription: "A combined skill integrating ${domainList} across ${generatedFiles.length} source documents."\n---\n`;
     zip.file(`${slug}/SKILL.md`, skillMdContent);
     for (const file of generatedFiles) {
       zip.file(`${slug}/${file.filename}`, file.content);
