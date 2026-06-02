@@ -157,7 +157,7 @@
    Clerk overrides — stable .cl- class targeting
 ============================================================ */
 
-/* Auth card — white text on all common text-bearing tags */
+/* Auth card — white text */
 .cl-card p,
 .cl-card h1,
 .cl-card h2,
@@ -172,11 +172,42 @@
 .cl-userPreviewSecondaryIdentifier { color: #94A3B8 !important; }
 .cl-userButtonPopoverActionButtonIcon { color: #94A3B8 !important; }
 
-/* Manage Account modal — connected accounts */
+/* Manage Account modal (UserProfile) — left sidebar */
+.cl-navbar p,
+.cl-navbar h1,
+.cl-navbar h2,
+.cl-navbar span { color: #F8FAFC !important; }
+.cl-navbarButtonText { color: #94A3B8 !important; }
+.cl-navbarButton__active .cl-navbarButtonText { color: #F8FAFC !important; }
+
+/* Manage Account modal — right content area */
+.cl-page p,
+.cl-page h1,
+.cl-page h2,
+.cl-page h3,
+.cl-page span,
+.cl-page label { color: #F8FAFC !important; }
+
+.cl-pageScrollBox p,
+.cl-pageScrollBox h1,
+.cl-pageScrollBox h2,
+.cl-pageScrollBox h3,
+.cl-pageScrollBox span,
+.cl-pageScrollBox label { color: #F8FAFC !important; }
+
+.cl-profileSectionTitleText { color: #F8FAFC !important; }
+
+.cl-profileSectionContent p,
+.cl-profileSectionContent span { color: #F8FAFC !important; }
+
+.cl-profileSectionItem p,
+.cl-profileSectionItem span { color: #F8FAFC !important; }
+
+/* Connected accounts */
 .cl-connectedAccountButtonText { color: #F8FAFC !important; }
 .cl-connectedAccountUserIdentifier { color: #94A3B8 !important; }
 
-/* Footer "Secured by Clerk" — HTML text, SVG text, SVG paths */
+/* Footer "Secured by Clerk" — covers HTML text + SVG paths + SVG text nodes */
 .cl-footer { color: #64748b !important; }
 .cl-footer * { color: #64748b !important; }
 .cl-footer svg path,
@@ -190,7 +221,7 @@
 /* "for Relatch" — UserButton popover footer */
 .cl-userButtonPopoverFooter {
   flex-wrap: wrap !important;
-  gap: 2px !important;
+  gap: 0 !important;
 }
 
 .cl-userButtonPopoverFooter::after {
@@ -200,14 +231,16 @@
   color: #475569 !important;
   font-size: 10px;
   font-family: inherit;
+  font-weight: 600;
   letter-spacing: 0.04em;
   padding-bottom: 3px;
+  margin-top: -1px;
 }
 
 /* "for Relatch" — sign-in/up card footer */
 .cl-footer {
   flex-wrap: wrap !important;
-  gap: 2px !important;
+  gap: 0 !important;
 }
 
 .cl-footer::after {
@@ -217,7 +250,9 @@
   color: #475569 !important;
   font-size: 10px;
   font-family: inherit;
+  font-weight: 600;
   letter-spacing: 0.04em;
+  margin-top: -1px;
   padding-bottom: 2px;
 }
 
