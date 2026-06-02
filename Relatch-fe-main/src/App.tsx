@@ -1940,10 +1940,22 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     if (generatedFiles.length === 1) { handleDownloadSingle(generatedFiles[0]); if (currentSignature) setVideoSeenSignature(currentSignature); return; }
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
-    for (const file of generatedFiles) zip.file(file.filename, file.content);
+    const slug = toSkillSlug(config.skillName);
+    // Claude skill installer requires a top-level folder containing SKILL.md.
+    // Select the file whose category ranks highest in PRIORITY_ORDER as SKILL.md.
+    const rankOf = (c: GeneratedSkill['category']) => {
+      const i = PRIORITY_ORDER.indexOf(c as FileCategory);
+      return i === -1 ? PRIORITY_ORDER.length : i;
+    };
+    const skillMdFile = generatedFiles.reduce((best, current) => rankOf(current.category) < rankOf(best.category) ? current : best);
+    zip.file(`${slug}/SKILL.md`, skillMdFile.content);
+    for (const file of generatedFiles) {
+      if (file === skillMdFile) continue;
+      zip.file(`${slug}/${file.filename}`, file.content);
+    }
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${generatedFiles[0].filename.replace('.md', '')}-skills.zip`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = `${slug}.zip`; a.click(); URL.revokeObjectURL(url);
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
 
@@ -2369,7 +2381,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
                     { step: '1', text: 'Download your skill file above' },
                     { step: '2', text: 'Open Claude → Customize section' },
                     { step: '3', text: 'Go to Skills → tap the + icon to upload' },
-                    { step: '4', text: 'Select your downloaded .md file. Claude now works exactly like you do.' },
+                    { step: '4', text: 'Upload your downloaded file (ZIP or .md) to Claude. Claude now works exactly like you do.' },
                   ].map(item => (
                     <div key={item.step} className="flex items-start gap-2.5">
                       <span className="w-5 h-5 rounded-md bg-blue-500/15 text-blue-400 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{item.step}</span>
