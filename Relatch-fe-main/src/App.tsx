@@ -1971,13 +1971,15 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     // Generate a minimal SKILL.md (name + description only). Do NOT promote any
     // enriched file into this slot — each enriched file keeps its own filename.
     // Extract the domain from each file's frontmatter for the description.
-    const domains = generatedFiles.map(f => {
+    const domains = [...new Set(generatedFiles.map(f => {
       const m = f.content.match(/^domain:\s*"?([^"\n]+)"?/m);
       return m ? m[1].trim() : f.category;
-    });
-    const domainList = domains.length === 2
-      ? `${domains[0]} and ${domains[1]}`
-      : `${domains.slice(0, -1).join(', ')} and ${domains[domains.length - 1]}`;
+    }))];
+    const domainList = domains.length === 1
+      ? domains[0]
+      : domains.length === 2
+        ? `${domains[0]} and ${domains[1]}`
+        : `${domains.slice(0, -1).join(', ')} and ${domains[domains.length - 1]}`;
     const skillMdContent = `---\nname: "${slug}"\ndescription: "A combined skill integrating ${domainList} across ${generatedFiles.length} source documents."\n---\n`;
     zip.file(`${slug}/SKILL.md`, skillMdContent);
     for (const file of generatedFiles) {
@@ -2356,6 +2358,10 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
             </div>
           </div>
         </AnimatedSection>
+      )}
+      {generatedFiles && generatedFiles.length > 0 && !videoVisible && (
+        <video key={config.target} muted playsInline preload="auto" aria-hidden="true" className="hidden"
+          src={config.target === 'codex' ? '/videos/codex-setup.mp4' : '/videos/claude-setup.mp4'} />
       )}
       {videoVisible && (
         <AnimatedSection delay={0}>
