@@ -1968,23 +1968,19 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     const slug = toSkillSlug(config.skillName);
-    // Claude skill installer requires a top-level folder containing SKILL.md.
-    // Select the file whose category ranks highest in PRIORITY_ORDER as SKILL.md.
-    const rankOf = (c: GeneratedSkill['category']) => {
-      const i = PRIORITY_ORDER.indexOf(c as FileCategory);
-      return i === -1 ? PRIORITY_ORDER.length : i;
-    };
-    const skillMdFile = generatedFiles.reduce((best, current) => rankOf(current.category) < rankOf(best.category) ? current : best);
-    // Rewrite SKILL.md's YAML name field to the clean skill slug so Claude's skill
-    // library displays "${slug}" instead of the source-tagged safeSkillName.
-    // Matches only the opening frontmatter line `---\nname: "..."` (no-op if absent).
-    const skillMdContent = skillMdFile.content.replace(
-      /^---\nname:\s*"[^"]*"/,
-      `---\nname: "${slug}"`
-    );
+    // Generate a minimal SKILL.md (name + description only). Do NOT promote any
+    // enriched file into this slot — each enriched file keeps its own filename.
+    // Extract the domain from each file's frontmatter for the description.
+    const domains = generatedFiles.map(f => {
+      const m = f.content.match(/^domain:\s*"?([^"\n]+)"?/m);
+      return m ? m[1].trim() : f.category;
+    });
+    const domainList = domains.length === 2
+      ? `${domains[0]} and ${domains[1]}`
+      : `${domains.slice(0, -1).join(', ')} and ${domains[domains.length - 1]}`;
+    const skillMdContent = `---\nname: "${slug}"\ndescription: "A combined skill integrating ${domainList} across ${generatedFiles.length} source documents."\n---`;
     zip.file(`${slug}/SKILL.md`, skillMdContent);
     for (const file of generatedFiles) {
-      if (file === skillMdFile) continue;
       zip.file(`${slug}/${file.filename}`, file.content);
     }
     const blob = await zip.generateAsync({ type: 'blob' });
