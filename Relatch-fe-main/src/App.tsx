@@ -1874,6 +1874,14 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
                   body = cleanContent.slice(cleanContent.indexOf(oldYamlMatch[0]) + oldYamlMatch[0].length).trim();
                 }
 
+                // Residual FM guard: if a second (possibly unclosed) frontmatter block survived
+                // the first strip — e.g. when an existing skill file is re-uploaded as source —
+                // drop everything before the first ## section header.
+                if (body.startsWith('---')) {
+                  const firstSection = body.search(/^##\s/m);
+                  if (firstSection !== -1) body = body.slice(firstSection).trim();
+                }
+
                 let finalOutput = frontmatter + '\n\n';
 
                 if (notes && notes.trim()) {
@@ -1898,8 +1906,23 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
               }
             }
             const finalContent = injectCustomNotes(f.content, config.customNotes ?? '');
+            // Disambiguate filenames in multi-file sessions to prevent collisions when
+            // inferCategory() routes multiple files to the same category.
+            const fileSlug = f.name
+              .replace(/\.[^/.]+$/, '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .slice(0, 24);
+            const activeFileCount = files.filter(x => config.categories[x.category]?.enabled).length;
+            const disambiguatedSlug = fileSlug.startsWith(slug + '-')
+              ? fileSlug.slice(slug.length + 1)
+              : fileSlug;
+            const filename = activeFileCount > 1 && disambiguatedSlug
+              ? `${slug}-${f.category}-${disambiguatedSlug}.md`
+              : `${slug}-${f.category}.md`;
             return {
-              filename: `${slug}-${f.category}.md`,
+              filename,
               content: finalContent,
               category: f.category,
               tokenEstimate: estimateTokens(finalContent),
