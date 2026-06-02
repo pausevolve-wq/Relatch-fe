@@ -216,6 +216,11 @@
 .cl-userButtonPopoverFooter * { color: #64748b !important; }
 .cl-userButtonPopoverFooter svg { filter: brightness(0) invert(1); opacity: 0.45; }
 
+/* Manage Account modal — Clerk badge is inside .cl-navbar as an <a> tag */
+.cl-navbar a svg { filter: brightness(0) invert(1); opacity: 0.45; }
+.cl-navbar a,
+.cl-navbar a * { color: #64748b !important; }
+
 @keyframes processingMsgIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
