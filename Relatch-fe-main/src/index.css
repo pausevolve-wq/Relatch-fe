@@ -207,54 +207,14 @@
 .cl-connectedAccountButtonText { color: #F8FAFC !important; }
 .cl-connectedAccountUserIdentifier { color: #94A3B8 !important; }
 
-/* Footer "Secured by Clerk" — covers HTML text + SVG paths + SVG text nodes */
+/* Footer "Secured by Clerk" — text color + SVG logo via filter */
 .cl-footer { color: #64748b !important; }
 .cl-footer * { color: #64748b !important; }
-.cl-footer svg path,
-.cl-footer svg text { fill: #64748b !important; }
+.cl-footer svg { filter: brightness(0) invert(1); opacity: 0.45; }
 
 .cl-userButtonPopoverFooter { color: #64748b !important; }
 .cl-userButtonPopoverFooter * { color: #64748b !important; }
-.cl-userButtonPopoverFooter svg path,
-.cl-userButtonPopoverFooter svg text { fill: #64748b !important; }
-
-/* "for Relatch" — UserButton popover footer */
-.cl-userButtonPopoverFooter {
-  flex-wrap: wrap !important;
-  gap: 0 !important;
-}
-
-.cl-userButtonPopoverFooter::after {
-  content: 'for Relatch';
-  flex: 0 0 100%;
-  text-align: center;
-  color: #475569 !important;
-  font-size: 10px;
-  font-family: inherit;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding-bottom: 3px;
-  margin-top: -1px;
-}
-
-/* "for Relatch" — sign-in/up card footer */
-.cl-footer {
-  flex-wrap: wrap !important;
-  gap: 0 !important;
-}
-
-.cl-footer::after {
-  content: 'for Relatch';
-  flex: 0 0 100%;
-  text-align: center;
-  color: #475569 !important;
-  font-size: 10px;
-  font-family: inherit;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  margin-top: -1px;
-  padding-bottom: 2px;
-}
+.cl-userButtonPopoverFooter svg { filter: brightness(0) invert(1); opacity: 0.45; }
 
 @keyframes processingMsgIn {
   from { opacity: 0; transform: translateY(8px); }
