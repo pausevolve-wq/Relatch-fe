@@ -315,10 +315,21 @@ createRoot(document.getElementById("root")!).render(
           userButtonPopoverFooter: {
             background: "#0B1120",
             borderTop: "1px solid rgba(255,255,255,0.07)",
+            color: "#94A3B8",
+            flexWrap: "wrap",
           },
           userButtonPopoverMain: {
             background: "#0B1120",
             color: "#F8FAFC",
+          },
+          internal__link: {
+            color: "#94A3B8",
+          },
+          connectedAccountButtonText: {
+            color: "#F8FAFC",
+          },
+          connectedAccountUserIdentifier: {
+            color: "#94A3B8",
           },
         },
       }}
