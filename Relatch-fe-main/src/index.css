@@ -153,46 +153,72 @@
   display: none !important;
 }
 
-/* Clerk color overrides — appearance API doesn't reach all nested elements */
-.cl-userButtonPopoverFooter a,
-.cl-userButtonPopoverFooter span { color: #64748b !important; }
+/* ============================================================
+   Clerk overrides — stable .cl- class targeting
+============================================================ */
 
-.cl-footer a,
-.cl-footer span { color: #64748b !important; }
+/* Auth card — white text on all common text-bearing tags */
+.cl-card p,
+.cl-card h1,
+.cl-card h2,
+.cl-card label,
+.cl-card span { color: #F8FAFC !important; }
 
-.cl-userPreviewMainIdentifier { color: #F8FAFC !important; }
+/* UserButton popover body */
+.cl-userButtonPopoverMain p,
+.cl-userButtonPopoverMain h1,
+.cl-userButtonPopoverMain h2,
+.cl-userButtonPopoverMain span { color: #F8FAFC !important; }
 .cl-userPreviewSecondaryIdentifier { color: #94A3B8 !important; }
-.cl-userButtonPopoverActionButtonText { color: #F8FAFC !important; }
 .cl-userButtonPopoverActionButtonIcon { color: #94A3B8 !important; }
+
+/* Manage Account modal — connected accounts */
 .cl-connectedAccountButtonText { color: #F8FAFC !important; }
 .cl-connectedAccountUserIdentifier { color: #94A3B8 !important; }
 
-/* Clerk branding footer — "for Relatch" subordinate line */
+/* Footer "Secured by Clerk" — HTML text, SVG text, SVG paths */
+.cl-footer { color: #64748b !important; }
+.cl-footer * { color: #64748b !important; }
+.cl-footer svg path,
+.cl-footer svg text { fill: #64748b !important; }
+
+.cl-userButtonPopoverFooter { color: #64748b !important; }
+.cl-userButtonPopoverFooter * { color: #64748b !important; }
+.cl-userButtonPopoverFooter svg path,
+.cl-userButtonPopoverFooter svg text { fill: #64748b !important; }
+
+/* "for Relatch" — UserButton popover footer */
 .cl-userButtonPopoverFooter {
   flex-wrap: wrap !important;
+  gap: 2px !important;
 }
 
 .cl-userButtonPopoverFooter::after {
   content: 'for Relatch';
   flex: 0 0 100%;
   text-align: center;
-  color: #475569;
+  color: #475569 !important;
   font-size: 10px;
   font-family: inherit;
   letter-spacing: 0.04em;
-  margin-top: 2px;
   padding-bottom: 3px;
+}
+
+/* "for Relatch" — sign-in/up card footer */
+.cl-footer {
+  flex-wrap: wrap !important;
+  gap: 2px !important;
 }
 
 .cl-footer::after {
   content: 'for Relatch';
-  display: block;
+  flex: 0 0 100%;
   text-align: center;
-  color: #475569;
+  color: #475569 !important;
   font-size: 10px;
   font-family: inherit;
   letter-spacing: 0.04em;
-  margin-top: 3px;
+  padding-bottom: 2px;
 }
 
 @keyframes processingMsgIn {
