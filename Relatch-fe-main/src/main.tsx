@@ -316,7 +316,6 @@ createRoot(document.getElementById("root")!).render(
             background: "#0B1120",
             borderTop: "1px solid rgba(255,255,255,0.07)",
             color: "#94A3B8",
-            flexWrap: "wrap",
           },
           userButtonPopoverMain: {
             background: "#0B1120",
