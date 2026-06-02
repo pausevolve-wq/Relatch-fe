@@ -152,3 +152,19 @@
 .relatch-video-section video::-webkit-media-controls-enclosure {
   display: none !important;
 }
+
+@keyframes processingMsgIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.processing-msg-in {
+  animation: processingMsgIn 0.4s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .processing-msg-in {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
