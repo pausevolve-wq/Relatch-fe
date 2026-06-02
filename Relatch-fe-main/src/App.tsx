@@ -1918,8 +1918,12 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
             const disambiguatedSlug = fileSlug.startsWith(slug + '-')
               ? fileSlug.slice(slug.length + 1)
               : fileSlug;
+            // Multi-file: drop the category infix from the filename. Category is
+            // implicit in the skill's organization — the filename should read as a
+            // clean skill component (e.g. "fusion-finance.md"), not an internal tag.
+            // Single-file path preserves `${slug}-${category}.md` byte-identically.
             const filename = activeFileCount > 1 && disambiguatedSlug
-              ? `${slug}-${f.category}-${disambiguatedSlug}.md`
+              ? `${slug}-${disambiguatedSlug}.md`
               : `${slug}-${f.category}.md`;
             return {
               filename,
@@ -1971,7 +1975,14 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       return i === -1 ? PRIORITY_ORDER.length : i;
     };
     const skillMdFile = generatedFiles.reduce((best, current) => rankOf(current.category) < rankOf(best.category) ? current : best);
-    zip.file(`${slug}/SKILL.md`, skillMdFile.content);
+    // Rewrite SKILL.md's YAML name field to the clean skill slug so Claude's skill
+    // library displays "${slug}" instead of the source-tagged safeSkillName.
+    // Matches only the opening frontmatter line `---\nname: "..."` (no-op if absent).
+    const skillMdContent = skillMdFile.content.replace(
+      /^---\nname:\s*"[^"]*"/,
+      `---\nname: "${slug}"`
+    );
+    zip.file(`${slug}/SKILL.md`, skillMdContent);
     for (const file of generatedFiles) {
       if (file === skillMdFile) continue;
       zip.file(`${slug}/${file.filename}`, file.content);
