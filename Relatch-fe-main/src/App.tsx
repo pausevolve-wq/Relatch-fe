@@ -968,6 +968,72 @@ function sampleLargeDocument(text: string, charCap: number): string {
   return start + '\n\n...[content continues]...\n\n' + middle + '\n\n...[content continues]...\n\n' + end;
 }
 
+function distillForCodex(text: string, charCap: number): string {
+  if (text.length <= charCap) return text;
+  const lines = text.split('\n');
+  const scoreLineForCodex = (line: string): number => {
+    const l = line.trim();
+    if (l.length < 15) return -1;
+    let s = 0;
+    if (/\b(always|never|must|must not|should|don't|do not|require|enforce|ensure|refuse|reject|halt|block)\b/i.test(l)) s += 7;
+    if (/^\s*\d+[.)]\s/.test(l) || /^#{1,3}\s/.test(l)) s += 6;
+    if (/\b(const|let|var|function|class|def|fn|import|export|async|npm|yarn|git|pip|docker)\b/i.test(l) || /[{};]|=>|::|->/.test(l)) s += 6;
+    if (/\b(when|trigger|activate|if you|run|execute|apply|refactor|review|deploy|fix|build)\b/i.test(l)) s += 5;
+    if (/\b(refuse|escalate|pause|ask|clarify|human|approve|out.?of.?scope)\b/i.test(l)) s += 5;
+    if (/\b(example|before|after|wrong|avoid|instead|prefer|correct|anti.?pattern)\b/i.test(l)) s += 4;
+    if (l.includes(':') && l.length > 30) s += 2;
+    if (/^[-•*]\s/.test(l) && l.length > 20) s += 2;
+    if (/^(https?:|www\.|mailto:|@\w)/.test(l)) s -= 8;
+    return s;
+  };
+  const n = lines.length;
+  const t = Math.floor(n / 3);
+  const thirds = [lines.slice(0, t), lines.slice(t, 2 * t), lines.slice(2 * t)];
+  const budgets = [Math.floor(charCap * 0.4), Math.floor(charCap * 0.3), Math.floor(charCap * 0.3)];
+  const parts: string[] = [];
+  for (let si = 0; si < thirds.length; si++) {
+    const seg = thirds[si];
+    const scored = seg
+      .map((line, li) => ({ line, score: scoreLineForCodex(line), li }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+    let used = 0;
+    const picked: { line: string; li: number }[] = [];
+    for (const { line, li } of scored) {
+      if (used + line.length + 1 > budgets[si]) break;
+      picked.push({ line, li });
+      used += line.length + 1;
+    }
+    picked.sort((a, b) => a.li - b.li);
+    if (picked.length > 0) parts.push(picked.map(p => p.line).join('\n'));
+  }
+  const result = parts.join('\n\n');
+  return result.trim() || sampleLargeDocument(text, charCap);
+}
+
+function validateCodexDescription(desc: string): boolean {
+  if (!desc || desc.trim().length < 20) return false;
+  if (/^[\w\s-]+ skill\.?$/i.test(desc.trim())) return false;
+  const d = desc.toLowerCase();
+  const GENERIC = ['helps with', 'assists with', 'applies expertise', 'supports tasks', 'applies to ', 'provides assistance', 'general purpose'];
+  if (GENERIC.some(p => d.includes(p))) return false;
+  return /\b(refactor|migrate|review|deploy|execute|generate|create|fix|build|run|analyze|extract|check|validate|enforce|when (you|i|the user|codex)|set up|configure|implement|debug)\b/i.test(desc);
+}
+
+function validateCodexSkillReadiness(normalizedMd: string): 'ready' | 'degraded' | 'invalid' {
+  if (!normalizedMd.trim()) return 'invalid';
+  const fmMatch = normalizedMd.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return 'invalid';
+  const fm = fmMatch[1];
+  if (!fm.includes('name:') || !fm.includes('description:')) return 'invalid';
+  if (!normalizedMd.includes('## ')) return 'invalid';
+  const descMatch = fm.match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+  const desc = descMatch ? descMatch[1].replace(/\\"/g, '"').replace(/\n/g, ' ').trim() : '';
+  const hasPlaceholder = normalizedMd.includes('[Not extracted') || normalizedMd.includes('[review source') || normalizedMd.includes('Review source document') || normalizedMd.includes('to be added');
+  if (hasPlaceholder || !validateCodexDescription(desc)) return 'degraded';
+  return 'ready';
+}
+
 function sanitizeYamlValue(val: string): string {
   if (/[&:#|>!?*{}[\],@`]/.test(val) || val.includes('"')) {
     return '"' + val.replace(/"/g, '\\"') + '"';
@@ -1277,9 +1343,11 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Pro
     throw new Error(profile.rejectReason || 'This file type cannot be processed.');
   }
 
-  const textForEnrichment = profile.sizeClass === 'large'
-    ? sampleLargeDocument(extracted.text, profile.charCap)
-    : extracted.text;
+  const textForEnrichment = target === 'codex'
+    ? distillForCodex(extracted.text, profile.charCap)
+    : profile.sizeClass === 'large'
+      ? sampleLargeDocument(extracted.text, profile.charCap)
+      : extracted.text;
 
   // v2.4: enrichWithAI returns string on success or { content, degraded: true } when the
   // backend used the deterministic Codex fallback assembler. Unpack here — content is always
@@ -1296,6 +1364,9 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Pro
   );
   const content = typeof enrichResult === 'string' ? enrichResult : (enrichResult as any).content;
   const isDegraded = typeof enrichResult !== 'string' && (enrichResult as any).degraded === true;
+  if (target === 'codex') {
+    console.log('[Codex]', { file: file.name, sizeClass: profile.sizeClass, distilledLen: textForEnrichment.length, rawLen: extracted.text.length, degraded: isDegraded });
+  }
   const extractionWarning = [
     ...(extracted.warnings.length ? [extracted.warnings.join(' ')] : []),
     ...(isDegraded ? ['Enrichment service was temporarily unavailable. This skill was assembled from your source using local signal extraction — review and refine before deploying.'] : []),
@@ -1763,6 +1834,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedSkill[] | null>(null);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
+  useEffect(() => { setActiveFile(0); }, [generatedFiles]);
   const [codexExportError, setCodexExportError] = useState<string | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
   const videoSectionRef = useRef<HTMLDivElement>(null);
@@ -2088,8 +2160,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     const slug = codexSlug;
     // Prefer description saved from raw backend content; fall back to extracting from content or skill name
     const savedDesc = generatedFiles[0].codexDescription;
-    const fmData = savedDesc ? null : extractCodexFm(generatedFiles[0].content || '');
-    let description = (savedDesc || fmData?.description || `${config.skillName || slug} skill.`).replace(/\s+/g, ' ').trim();
+    let description = (savedDesc || `${config.skillName || slug} skill.`).replace(/\s+/g, ' ').trim();
     const escDesc = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const frontmatter = `---\nname: ${slug}\ndescription: "${escDesc}"\n---`;
     const bodies: string[] = [];
@@ -2158,22 +2229,82 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     return md;
   };
 
+  const getNormalizedCodexSkillMdForFile = (f: GeneratedSkill): string => {
+    const savedDesc = f.codexDescription;
+    const description = (savedDesc || `${config.skillName || codexSlug} skill.`).replace(/\s+/g, ' ').trim();
+    const escDesc = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const fileSlug = f.filename.replace(/\.md$/, '');
+    const rawBody = stripCodexFm(f.content);
+    const afterFmStrip = rawBody.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+    const firstHeadingIdx = afterFmStrip.search(/^## /m);
+    const cleanBody = firstHeadingIdx > 0 ? afterFmStrip.slice(firstHeadingIdx).trim() : afterFmStrip;
+    if (!cleanBody.trim()) return '';
+    let md = `---\nname: ${fileSlug}\ndescription: "${escDesc}"\n---\n\n${cleanBody}`.replace(/\n{3,}/g, '\n\n').trim() + '\n';
+    md = md.replace(/^(---\n)([\s\S]*?)(\n---)/m, (_m, open, body, close) => {
+      const cleaned = body.split('\n').filter((l: string) => !l.match(/^(domain|content_type|use_cases|origin|tags):/)).join('\n');
+      return `${open}${cleaned}${close}`;
+    });
+    const fmEnd = md.indexOf('\n---\n');
+    if (fmEnd !== -1) {
+      const header = md.slice(0, fmEnd + 5);
+      const rest = md.slice(fmEnd + 5).replace(/^---\n[\s\S]*?\n---\n?/gm, '');
+      md = (header + rest).replace(/\n{3,}/g, '\n\n').trim() + '\n';
+    }
+    const fmEnd2 = md.indexOf('\n---\n');
+    if (fmEnd2 !== -1) {
+      const afterFm = md.slice(fmEnd2 + 5).trim();
+      const firstH = afterFm.search(/^## /m);
+      if (firstH > 0) md = md.slice(0, fmEnd2 + 5) + '\n' + afterFm.slice(firstH).trim() + '\n';
+    }
+    return md;
+  };
+
   const handleDownloadCodex = async () => {
     if (!generatedFiles || generatedFiles.length === 0) return;
     setCodexExportError(null);
-    const skillMd = getNormalizedCodexSkillMd();
-    if (!skillMd.includes('## ')) {
-      setCodexExportError('Skill content is empty — please try generating again.');
-      return;
-    }
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
-    zip.file(`${codexSlug}/SKILL.md`, skillMd);
-    zip.file(`${codexSlug}/agents/openai.yaml`, buildCompanionYaml());
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
-    URL.revokeObjectURL(url);
+    if (generatedFiles.length === 1) {
+      const skillMd = getNormalizedCodexSkillMd();
+      if (!skillMd.includes('## ')) {
+        setCodexExportError('Skill content is empty — please try generating again.');
+        return;
+      }
+      zip.file(`${codexSlug}/SKILL.md`, skillMd);
+      zip.file(`${codexSlug}/agents/openai.yaml`, buildCompanionYaml());
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const failedFiles: string[] = [];
+      let hasValid = false;
+      for (const f of generatedFiles) {
+        const skillMd = getNormalizedCodexSkillMdForFile(f);
+        const fileSlug = f.filename.replace(/\.md$/, '');
+        if (!skillMd.includes('## ')) { failedFiles.push(f.filename); continue; }
+        hasValid = true;
+        const fmData = extractCodexFm(skillMd);
+        const rawDesc = fmData?.description || fileSlug.replace(/-/g, ' ');
+        const firstSentence = rawDesc.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || rawDesc;
+        const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const displayName = (config.skillName || fileSlug).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const yaml = `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
+        zip.file(`${fileSlug}/SKILL.md`, skillMd);
+        zip.file(`${fileSlug}/agents/openai.yaml`, yaml);
+      }
+      if (!hasValid) {
+        setCodexExportError('All files failed validation — please try generating again.');
+        return;
+      }
+      if (failedFiles.length > 0) {
+        setCodexExportError(`Some files could not be packaged and were skipped: ${failedFiles.join(', ')}`);
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skills.zip`; a.click();
+      URL.revokeObjectURL(url);
+    }
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
 
@@ -2364,12 +2495,13 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
           )}
         </div>
       </AnimatedSection>
-      {generatedFiles.length > 1 && config.target !== 'codex' && (
+      {generatedFiles.length > 1 && (
         <AnimatedSection delay={100}>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {generatedFiles.map((file, i) => (
               <button key={i} onClick={() => setActiveFile(i)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${activeFile === i ? 'bg-white/[0.08] text-white border border-white/[0.1]' : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03] border border-transparent'}`}>
                 <FileText className="w-3 h-3" />{file.filename}
+                {config.target === 'codex' && (() => { const s = validateCodexSkillReadiness(getNormalizedCodexSkillMdForFile(file)); return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s === 'ready' ? 'bg-emerald-400' : s === 'degraded' ? 'bg-amber-400' : 'bg-red-400'}`} />; })()}
               </button>
             ))}
           </div>
@@ -2379,10 +2511,10 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         <AnimatedSection delay={200}>
           <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
-              <div className="text-xs text-gray-500 font-medium">{config.target === 'codex' ? 'Preview — SKILL.md content (packaged in ZIP on download)' : 'Preview'}</div>
+              <div className="text-xs text-gray-500 font-medium flex items-center gap-2">{config.target === 'codex' ? 'Preview — SKILL.md content (packaged in ZIP on download)' : 'Preview'}{config.target === 'codex' && (() => { const md = generatedFiles.length > 1 ? getNormalizedCodexSkillMdForFile(generatedFiles[activeFile]) : getNormalizedCodexSkillMd(); const s = validateCodexSkillReadiness(md); return s === 'ready' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ready</span> : s === 'degraded' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">review before use</span> : <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">needs regeneration</span>; })()}</div>
               <div className="flex items-center gap-1.5">
                 {config.target === 'codex' ? (
-                  <button onClick={() => handleCopy(getNormalizedCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
+                  <button onClick={() => handleCopy(generatedFiles.length > 1 ? getNormalizedCodexSkillMdForFile(generatedFiles[activeFile]) : getNormalizedCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
                     {copied === 'codex-skill-preview' ? <><Check className="w-3.5 h-3.5 text-emerald-400" /><span className="text-emerald-400">Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span>Copy SKILL.md</span></>}
                   </button>
                 ) : (<>
@@ -2397,7 +2529,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
               </div>
             </div>
             <div className="p-5 max-h-[450px] overflow-y-auto skill-preview bg-[#050a12]">
-              {renderMarkdownPreview(config.target === 'codex' ? getNormalizedCodexSkillMd() : generatedFiles[activeFile].content)}
+              {renderMarkdownPreview(config.target === 'codex' ? (generatedFiles.length > 1 ? getNormalizedCodexSkillMdForFile(generatedFiles[activeFile]) : getNormalizedCodexSkillMd()) : generatedFiles[activeFile].content)}
             </div>
           </div>
         </AnimatedSection>
