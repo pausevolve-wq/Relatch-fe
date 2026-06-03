@@ -1680,7 +1680,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-blue-400" /></div>
             <div><h3 className="text-sm font-semibold text-white">{config.target === 'codex' ? 'Anything Codex should always follow?' : 'Anything Claude should always remember?'}</h3><p className="text-[11px] text-gray-500">{config.target === 'codex' ? 'Rules and context injected into your Codex skill as highest-priority instructions' : 'Rules, quirks, preferences you didn\'t upload — type them here directly'}</p></div>
           </div>
-          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={config.target === 'codex' ? "Rules Codex should always apply when this skill is active...\n\nExamples:\n• Always check for existing tests before adding new ones\n• Never modify package.json without confirmation\n• Use the project's existing error handling pattern\n• Default to TypeScript strict mode" : "Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
+          <textarea value={config.customNotes} onChange={(e) => updateField('customNotes', e.target.value)} placeholder={config.target === 'codex' ? "Rules Codex should always apply when this skill is active...\n\nExamples:\n• Always check for existing tests before adding new ones\n• Never modify package.json without confirmation\n• Use the project's existing error handling pattern\n• Default to TypeScript strict mode" : "Anything you'd tell a new assistant on their first day...\n\nExamples:\n• Keep the tone sharp and direct. Skip the corporate speak.\n• I work in TypeScript, always default to that\n• My company is Acme. Never call it \"your company.\"\n• Keep responses short unless I explicitly ask for detail"} rows={config.target === 'codex' ? 7 : 5} className="w-full px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all resize-none text-sm leading-relaxed outline-none" />
           <p className="mt-2 text-[11px] text-gray-600">These go at the top of your {config.target === 'codex' ? 'Codex skill file' : 'skill file'} as the highest-priority instructions.</p>
         </div>
       </AnimatedSection>
@@ -1695,7 +1695,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
               const count = fileCounts[key] || 0;
               return (
                 <AnimatedSection key={key} delay={(idx + 4) * 60}>
-                  <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${cat.enabled ? 'bg-white/[0.025] border-white/[0.06]' : 'bg-white/[0.008] border-white/[0.03] opacity-40'}`}>
+                  <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 ${config.target === 'codex' ? 'py-4' : 'py-3'} rounded-xl border transition-all duration-200 ${cat.enabled ? 'bg-white/[0.025] border-white/[0.06]' : 'bg-white/[0.008] border-white/[0.03] opacity-40'}`}>
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <button onClick={() => toggleCategory(key)} className={`relative w-9 h-5 rounded-full transition-all duration-300 shrink-0 ${cat.enabled ? 'bg-blue-500' : 'bg-white/[0.08]'}`}>
                         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-300 ${cat.enabled ? 'left-[18px]' : 'left-0.5'}`} />
@@ -1706,7 +1706,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
                         <p className="text-[11px] text-gray-600">{cat.description}</p>
                       </div>
                     </div>
-                    {cat.enabled && (
+                    {cat.enabled && config.target !== 'codex' && (
                       <div className="flex flex-wrap gap-1 pl-12 sm:pl-0 sm:justify-end">
                         {(['high', 'medium', 'low'] as const).map(p => (
                           <button key={p} onClick={() => updatePriority(key, p)} className={`px-2 py-1 text-[11px] rounded-lg font-medium transition-all ${cat.priority === p ? (p === 'high' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/25' : p === 'medium' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/25' : 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/25') : 'text-gray-600 hover:text-gray-400'}`}>{PRIORITY_LABELS[p]}</button>
@@ -1748,7 +1748,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
   const currentSignature = useMemo(() => {
     if (!generatedFiles || generatedFiles.length === 0) return null;
     return JSON.stringify({ t: config.target, f: generatedFiles.map(g => [g.filename, g.content]) });
-  }, [generatedFiles, config.target]);
+  }, [generatedFiles, config.target, config.categories]);
 
   const videoVisible = currentSignature !== null && currentSignature === videoSeenSignature;
 
@@ -1875,6 +1875,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
                 frontmatter += `name: "${safeSkillName}"\n`;
                 frontmatter += `domain: "${domain}"\n`;
                 frontmatter += `content_type: "${contentType}"\n`;
+                frontmatter += `priority: "${config.categories[f.category]?.priority ?? 'medium'}"\n`;
                 frontmatter += `use_cases:\n`;
                 useCases.forEach(uc => {
                   frontmatter += `  - "${uc}"\n`;
