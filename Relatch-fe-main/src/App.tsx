@@ -869,6 +869,27 @@ function profileDocument(file: File, extractedText: string, extractionWarning?: 
   if (textLength > 40000) { sizeClass = 'large'; charCap = 8000; }
   else if (textLength > 3000) { sizeClass = 'medium'; charCap = 5000; }
 
+  // Template E: Structured financial data — must be checked BEFORE the REJECT gate.
+  // Finance CSVs with numeric-heavy rows often have low word counts (numbers don't
+  // count well) and would otherwise be incorrectly rejected as "no behavioral patterns."
+  // .xlsx/.xls deferred post-launch (requires binary parser dependency).
+  const isFinanceDataFormat = ext === '.csv';
+  const financeTabularPattern = /\b(budget|actual|variance|revenue|expense|margin|P&L|profit|loss|quarter|fiscal|forecast|YTD|MTD|EBITDA|cash\s*flow|balance\s*sheet|income\s*statement|operating|COGS|gross|net|ROI|KPI|headcount|capex|opex|earnings|liabilities|assets|equity)\b/i;
+  const hasFinanceTerms = financeTabularPattern.test(extractedText) || financeTabularPattern.test(file.name);
+  const csvLineCount = extractedText.split('\n').filter(l => l.trim().length > 0).length;
+  const numericTokenCount = (extractedText.match(/\b\d[\d,.]*%?\b/g) || []).length;
+  const totalTokenCount = Math.max(extractedText.split(/\s+/).filter(w => w.length > 0).length, 1);
+  const numericDensity = numericTokenCount / totalTokenCount;
+
+  const isStructuredFinance =
+    isFinanceDataFormat &&
+    csvLineCount >= 5 &&
+    (hasFinanceTerms || numericDensity > 0.3);
+
+  if (isStructuredFinance) {
+    return { template: 'E' as const, richFormats: ['table', 'matrix', 'bullets'], charCap, sizeClass, contentType: 'structured-data', rejectReason: undefined };
+  }
+
   // Reject: pure data files
   const dataExtensions = ['.csv', '.json', '.yaml', '.yml', '.toml'];
   if (dataExtensions.includes(ext) && wordCount < 100) {
@@ -918,6 +939,11 @@ function profileDocument(file: File, extractedText: string, extractionWarning?: 
     'security', 'healthcare', 'academic_research', 'real_estate', 'seo', 'growth_marketing',
     'data_science', 'pr_communications'];
   if (detected && domainDTemplates.includes(detected.id)) {
+    // Finance CSVs that passed the word-count gate above land here — intercept before D.
+    // Any CSV flagged as finance (even with 100+ words) belongs in Template E, not D.
+    if (detected.id === 'finance' && isStructuredFinance) {
+      return { template: 'E' as const, richFormats: ['table', 'matrix', 'bullets'], charCap, sizeClass, contentType: 'structured-data', rejectReason: undefined };
+    }
     return { template: 'D' as const, richFormats: (detected as any).richFormats || ['table', 'flowchart'], charCap, sizeClass, contentType: 'professional', rejectReason: undefined };
   }
 
