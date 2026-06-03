@@ -1650,7 +1650,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className={config.target === 'codex' ? 'space-y-10' : 'space-y-6'}>
       <AnimatedSection>
         <div ref={nameSectionRef} className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
           <div className="flex items-center gap-3 mb-6">
@@ -1685,41 +1685,43 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
         </div>
       </AnimatedSection>
 
-      <AnimatedSection delay={200}>
-        <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
-          <h3 className="text-sm font-semibold text-white mb-1">What goes into your skill</h3>
-          <p className="text-[11px] text-gray-500 mb-5">Only include what's relevant. You can always add more later.</p>
-          <div className="space-y-2">
-            {(Object.entries(config.categories) as [FileCategory, CategoryConfig][]).map(([key, cat], idx) => {
-              const meta = CATEGORY_META[key];
-              const count = fileCounts[key] || 0;
-              return (
-                <AnimatedSection key={key} delay={(idx + 4) * 60}>
-                  <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 ${config.target === 'codex' ? 'py-4' : 'py-3'} rounded-xl border transition-all duration-200 ${cat.enabled ? 'bg-white/[0.025] border-white/[0.06]' : 'bg-white/[0.008] border-white/[0.03] opacity-40'}`}>
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <button onClick={() => toggleCategory(key)} className={`relative w-9 h-5 rounded-full transition-all duration-300 shrink-0 ${cat.enabled ? 'bg-blue-500' : 'bg-white/[0.08]'}`}>
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-300 ${cat.enabled ? 'left-[18px]' : 'left-0.5'}`} />
-                      </button>
-                      <span className={`text-${meta.color}-400 shrink-0`}>{meta.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2"><span className="text-sm font-medium text-white">{cat.label}</span>{count > 0 && <span className="text-[11px] text-gray-500 font-mono">{count}</span>}</div>
-                        <p className="text-[11px] text-gray-600">{cat.description}</p>
+      {config.target !== 'codex' && (
+        <AnimatedSection delay={200}>
+          <div className="p-6 rounded-2xl bg-white/[0.025] border border-white/[0.06]">
+            <h3 className="text-sm font-semibold text-white mb-1">What goes into your skill</h3>
+            <p className="text-[11px] text-gray-500 mb-5">Only include what's relevant. You can always add more later.</p>
+            <div className="space-y-2">
+              {(Object.entries(config.categories) as [FileCategory, CategoryConfig][]).map(([key, cat], idx) => {
+                const meta = CATEGORY_META[key];
+                const count = fileCounts[key] || 0;
+                return (
+                  <AnimatedSection key={key} delay={(idx + 4) * 60}>
+                    <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3 rounded-xl border transition-all duration-200 ${cat.enabled ? 'bg-white/[0.025] border-white/[0.06]' : 'bg-white/[0.008] border-white/[0.03] opacity-40'}`}>
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <button onClick={() => toggleCategory(key)} className={`relative w-9 h-5 rounded-full transition-all duration-300 shrink-0 ${cat.enabled ? 'bg-blue-500' : 'bg-white/[0.08]'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-300 ${cat.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+                        </button>
+                        <span className={`text-${meta.color}-400 shrink-0`}>{meta.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2"><span className="text-sm font-medium text-white">{cat.label}</span>{count > 0 && <span className="text-[11px] text-gray-500 font-mono">{count}</span>}</div>
+                          <p className="text-[11px] text-gray-600">{cat.description}</p>
+                        </div>
                       </div>
+                      {cat.enabled && (
+                        <div className="flex flex-wrap gap-1 pl-12 sm:pl-0 sm:justify-end">
+                          {(['high', 'medium', 'low'] as const).map(p => (
+                            <button key={p} onClick={() => updatePriority(key, p)} className={`px-2 py-1 text-[11px] rounded-lg font-medium transition-all ${cat.priority === p ? (p === 'high' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/25' : p === 'medium' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/25' : 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/25') : 'text-gray-600 hover:text-gray-400'}`}>{PRIORITY_LABELS[p]}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    {cat.enabled && config.target !== 'codex' && (
-                      <div className="flex flex-wrap gap-1 pl-12 sm:pl-0 sm:justify-end">
-                        {(['high', 'medium', 'low'] as const).map(p => (
-                          <button key={p} onClick={() => updatePriority(key, p)} className={`px-2 py-1 text-[11px] rounded-lg font-medium transition-all ${cat.priority === p ? (p === 'high' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/25' : p === 'medium' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/25' : 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/25') : 'text-gray-600 hover:text-gray-400'}`}>{PRIORITY_LABELS[p]}</button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </AnimatedSection>
-              );
-            })}
+                  </AnimatedSection>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </AnimatedSection>
+        </AnimatedSection>
+      )}
     </div>
   );
 }
@@ -1820,7 +1822,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       try {
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
-          .filter(f => config.categories[f.category]?.enabled)
+          .filter(f => config.target === 'codex' || config.categories[f.category]?.enabled)
           .map(f => {
           const injectCustomNotes = (content: string, notes: string): string => {
                 let cleanContent = content.replace(/\r/g, '').trim();
