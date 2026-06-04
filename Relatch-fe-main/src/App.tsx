@@ -2042,9 +2042,21 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
               const fmM = raw.match(/---\n([\s\S]*?)\n---/);
               if (fmM) {
                 const nM = fmM[1].match(/^name:\s*"?([\s\S]*?)"?\s*$/m);
-                const dM = fmM[1].match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+                let dM = fmM[1].match(/^description:\s*(.+)$/m);
+                if (!dM) {
+                  const blockMatch = fmM[1].match(/^description:\s*([\s\S]*?)(?=\n\S|\s*$)/m);
+                  if (blockMatch) dM = blockMatch;
+                }
                 const n = nM ? nM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : '';
-                const d = dM ? dM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() : '';
+                const d = dM
+                  ? dM[1]
+                      .replace(/^["']|["']$/g, '')
+                      .replace(/\\"/g, '"')
+                      .replace(/\\\\/g, '\\')
+                      .replace(/\n/g, ' ')
+                      .replace(/\s+/g, ' ')
+                      .trim()
+                  : '';
                 const fileSlugHint = f.name
                   .replace(/\.[^/.]+$/, '')
                   .toLowerCase()
@@ -2153,9 +2165,13 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     if (!m) return null;
     const nameM = m[1].match(/^name:\s*(.+)$/m);
     if (!nameM) return null;
-    const descM = m[1].match(/^description:\s*"?([\s\S]*?)"?\s*$/m);
+    let descM = m[1].match(/^description:\s*(.+)$/m);
+    if (!descM) {
+      const blockMatch = m[1].match(/^description:\s*([\s\S]*?)(?=\n\S|\s*$)/m);
+      if (blockMatch) descM = blockMatch;
+    }
     const rawDesc = descM
-      ? descM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+      ? descM[1].replace(/^["']|["']$/g, '').replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
       : '';
     const name = nameM[1].trim().replace(/^["']|["']$/g, '');
     return { name, description: rawDesc };
@@ -2216,10 +2232,17 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     return raw || 'my-skill';
   }, [config.skillName]);
 
+  const bestCodexFile = (): GeneratedSkill => {
+    if (!generatedFiles || generatedFiles.length === 0) return generatedFiles![0];
+    const rank = (src?: CodexDescriptionSource) =>
+      src === 'model' ? 0 : src === 'backend_placeholder' ? 1 : src === 'frontend_recovered' ? 2 : 3;
+    return [...generatedFiles].sort((a, b) => rank(a.codexMeta?.descriptionSource) - rank(b.codexMeta?.descriptionSource))[0];
+  };
+
   const buildCodexSkillMd = (): string => {
     if (!generatedFiles || generatedFiles.length === 0) return '';
     const slug = codexSlug;
-    const resolved = resolveCodexFrontmatter(generatedFiles[0], slug);
+    const resolved = resolveCodexFrontmatter(bestCodexFile(), slug);
     const escDesc = resolved.description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const frontmatter = `---\nname: ${resolved.name}\ndescription: "${escDesc}"\n---`;
     const bodies: string[] = [];
@@ -2243,7 +2266,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
   };
 
   const buildCompanionYaml = (): string => {
-    const resolved = resolveCodexFrontmatter(generatedFiles?.[0], codexSlug);
+    const resolved = resolveCodexFrontmatter(bestCodexFile(), codexSlug);
     const displayName = formatCodexDisplayName(resolved.name);
     const firstSentence = resolved.description.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || resolved.description;
     const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence)
@@ -2325,7 +2348,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     if (generatedFiles.length === 1) {
       const skillMd = getNormalizedCodexSkillMd();
       if (!skillMd.includes('## ')) {
-        setCodexExportError('Skill content is empty â€” please try generating again.');
+        setCodexExportError('Skill content is empty - please try generating again.');
         return;
       }
       zip.file(`${codexSlug}/SKILL.md`, skillMd);
@@ -2354,7 +2377,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         zip.file(`${fileSlug}/agents/openai.yaml`, yaml);
       }
       if (!hasValid) {
-        setCodexExportError('All files failed validation â€” please try generating again.');
+        setCodexExportError('All files failed validation - please try generating again.');
         return;
       }
       if (failedFiles.length > 0) {
@@ -2571,7 +2594,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         <AnimatedSection delay={200}>
           <div className="rounded-2xl border border-white/[0.06] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]">
-              <div className="text-xs text-gray-500 font-medium flex items-center gap-2">{config.target === 'codex' ? 'Preview â€” SKILL.md content (packaged in ZIP on download)' : 'Preview'}{config.target === 'codex' && (() => { const md = generatedFiles.length > 1 ? getNormalizedCodexSkillMdForFile(generatedFiles[activeFile]) : getNormalizedCodexSkillMd(); const s = validateCodexSkillReadiness(md); return s === 'ready' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ready</span> : s === 'degraded' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">review before use</span> : <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">needs regeneration</span>; })()}</div>
+              <div className="text-xs text-gray-500 font-medium flex items-center gap-2">{config.target === 'codex' ? 'Preview - SKILL.md content (packaged in ZIP on download)' : 'Preview'}{config.target === 'codex' && (() => { const md = generatedFiles.length > 1 ? getNormalizedCodexSkillMdForFile(generatedFiles[activeFile]) : getNormalizedCodexSkillMd(); const s = validateCodexSkillReadiness(md); return s === 'ready' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ready</span> : s === 'degraded' ? <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">review before use</span> : <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">needs regeneration</span>; })()}</div>
               <div className="flex items-center gap-1.5">
                 {config.target === 'codex' ? (
                   <button onClick={() => handleCopy(generatedFiles.length > 1 ? getNormalizedCodexSkillMdForFile(generatedFiles[activeFile]) : getNormalizedCodexSkillMd(), 'codex-skill-preview')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/[0.06] transition-all">
