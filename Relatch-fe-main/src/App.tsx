@@ -2850,7 +2850,7 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
         role="dialog"
         aria-modal="true"
         aria-labelledby="relatch-quota-title"
-        className="relatch-popup-enter relative w-full max-w-sm rounded-2xl border border-white/[0.08] p-7 text-center"
+        className="relatch-popup-enter relative w-full max-w-[440px] rounded-2xl border border-white/[0.08] p-7 text-center"
         style={{
           background: 'rgba(12,16,24,0.92)',
           boxShadow: '0 0 40px rgba(58,123,255,0.18)',
@@ -2859,13 +2859,16 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
         }}
       >
         <div className="w-11 h-11 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-          <Lock className="w-5 h-5 text-amber-400" />
+          <img src="/lock.png" className="w-5 h-5 object-contain" alt="" />
         </div>
         <h2 id="relatch-quota-title" className="text-base font-bold text-white tracking-tight">
-          {isWeekly ? `Quota exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Quota exhausted 5 / 5'}
+          {isWeekly ? `Weekly Quota Exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Daily Quota Exhausted 5 / 5'}
         </h2>
-        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed max-w-[260px] mx-auto">
-          Relatch is currently free and in product validation. We've capped usage per user to keep access fair — your daily quota refreshes every day and your weekly quota refreshes every week.
+        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
+          Relatch is currently free and in product validation. We've capped usage per user to keep access fair.
+        </p>
+        <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
+          Your daily quota refreshes every day and your weekly quota refreshes every week.
         </p>
         <div className="mt-4 text-left">
           <div className="flex items-center justify-between mb-1.5">
