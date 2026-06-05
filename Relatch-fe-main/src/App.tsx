@@ -1505,7 +1505,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked, onLockedClick }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean; onLockedClick: () => void }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1590,8 +1590,8 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
           onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleDrop(e); }}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-          className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${(files.length >= 3 || quotaLocked) ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'}`}
-          onClick={() => { if (files.length < 3 && !quotaLocked) document.getElementById('file-input')?.click(); }}
+          className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${files.length >= 3 ? 'opacity-50 pointer-events-none cursor-not-allowed' : quotaLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          onClick={() => { if (quotaLocked) { onLockedClick(); return; } if (files.length < 3) document.getElementById('file-input')?.click(); }}
         >
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.04] via-transparent to-blue-600/[0.02]" />
@@ -2862,12 +2862,10 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
           <Lock className="w-5 h-5 text-amber-400" />
         </div>
         <h2 id="relatch-quota-title" className="text-base font-bold text-white tracking-tight">
-          {isWeekly ? 'Weekly limit reached' : 'Daily limit reached'}
+          {isWeekly ? `Quota exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Quota exhausted 5 / 5'}
         </h2>
         <p className="text-[12px] text-gray-400 mt-2 leading-relaxed max-w-[260px] mx-auto">
-          {isWeekly
-            ? <>You've used all <span className="text-white font-medium">35 generations</span> for this week. Your quota resets next week.</>
-            : <>You've used all <span className="text-white font-medium">5 free generations</span> for today. Your daily quota resets tomorrow.</>}
+          Relatch is currently free and in product validation. We've capped usage per user to keep access fair — your daily quota refreshes every day and your weekly quota refreshes every week.
         </p>
         <div className="mt-4 text-left">
           <div className="flex items-center justify-between mb-1.5">
@@ -2881,9 +2879,6 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
             />
           </div>
         </div>
-        <p className="text-[11px] text-gray-600 mt-4 leading-relaxed">
-          Relatch is in product validation — per-user generation is capped to ensure fair access for everyone while we scale.
-        </p>
         <button
           type="button"
           onClick={onClose}
@@ -2893,7 +2888,7 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
             boxShadow: '0 0 24px rgba(59,130,255,0.28)',
           }}
         >
-          Got it
+          Okay
         </button>
       </div>
     </div>,
@@ -3264,6 +3259,7 @@ export default function App() {
                   target={config.target}
                   onQuotaReached={handleQuotaReached}
                   quotaLocked={quotaReached}
+                  onLockedClick={() => setShowQuotaModal(true)}
                 />
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
