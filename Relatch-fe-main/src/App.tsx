@@ -1582,7 +1582,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
             <p className="text-sm text-gray-400 mb-2">
               Drop the documents that define how you work.
             </p>
-            <p className="text-sm text-gray-500 mb-5">Guidelines, notes, examples, writing samples, anything !Â  Up to 3 files.</p>
+            <p className="text-sm text-gray-500 mb-5">Guidelines, notes, examples, writing samples, anything! Up to 3 files.</p>
             <div className="flex flex-wrap justify-center gap-2">
               {Object.entries(ACCEPTED_TYPES).map(([label, exts]) => (
                 <span key={label} className="px-2.5 py-1 text-[11px] rounded-lg bg-white/[0.03] text-gray-500 border border-white/[0.05] font-medium">
@@ -1595,7 +1595,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
               onClick={(e) => { e.stopPropagation(); onSampleLoad(); }}
               className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline underline-offset-4"
             >
-              See it in action with a sample file â†’
+              See it in action with a sample file →
             </button>
           </div>
           {isProcessing && (
@@ -2673,8 +2673,8 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
                 ) : (
                   [
                     { step: '1', text: 'Download your skill file above' },
-                    { step: '2', text: 'Open Claude â†’ Customize section' },
-                    { step: '3', text: 'Go to Skills â†’ tap the + icon to upload' },
+                    { step: '2', text: 'Open Claude → Customize section' },
+                    { step: '3', text: 'Go to Skills → tap the + icon to upload' },
                     { step: '4', text: 'Upload your downloaded file (ZIP or .md) to Claude. Claude now works exactly like you do.' },
                   ].map(item => (
                     <div key={item.step} className="flex items-start gap-2.5">
