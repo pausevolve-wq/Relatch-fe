@@ -1248,7 +1248,7 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude'): Promise<string | { content: string; degraded: boolean }> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<string | { content: string; degraded: boolean }> {
   // v2.4: shared Codex error stub â€” used at every point where Claude would fall through
   // to generateFallbackSkill(). Returns { content, degraded: true } so parseFile surfaces
   // the degraded warning. Structurally valid for Codex CLI; not enriched content.
@@ -1305,13 +1305,23 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
         charCap,
         sizeClass,
         target,
-        ...(codexShape ? { codexShape } : {})
+        ...(codexShape ? { codexShape } : {}),
+        ...(sessionId ? { sessionId } : {}),
       }),
     });
 
     if (response.status === 422) {
       if (target === 'codex') return codexErrorStub('Source content did not contain enough operational signal. Provide a richer document and regenerate.');
       return generateFallbackSkill(rawText, fileName, category);
+    }
+
+    if (response.status === 429) {
+      const errData = await response.json().catch(() => ({}));
+      const quotaErr = new Error('QUOTA_REACHED');
+      (quotaErr as any).isQuotaError = true;
+      (quotaErr as any).limitType = errData.limitType || 'daily';
+      (quotaErr as any).weeklyCount = errData.weeklyCount ?? 0;
+      throw quotaErr;
     }
 
     if (!response.ok) {
@@ -1334,12 +1344,14 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     return fixAiYamlFrontmatter(data.enriched);
   } catch (err) {
+    // Quota errors must bubble up to handleFiles — do not swallow them here.
+    if ((err as any)?.isQuotaError) throw err;
     if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
     return generateFallbackSkill(rawText, fileName, category);
   }
 }
 
-async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Promise<UploadedFile> {
+async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<UploadedFile> {
   const traceId = `ingest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const precheck = validateInputFile(file);
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
@@ -1388,7 +1400,8 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude'): Pro
     profile.richFormats,
     profile.charCap,
     profile.sizeClass,
-    target
+    target,
+    sessionId
   );
   const content = typeof enrichResult === 'string' ? enrichResult : (enrichResult as any).content;
   const isDegraded = typeof enrichResult !== 'string' && (enrichResult as any).degraded === true;
@@ -1492,7 +1505,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex' }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1526,20 +1539,30 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
       setError(`Only ${remaining} more file${remaining === 1 ? '' : 's'} allowed. First ${remaining} selected.`);
     }
 
-    const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target)));
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target, sessionId)));
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
+    let quotaInfo: { limitType: 'daily' | 'weekly'; weeklyCount: number } | null = null;
+
     results.forEach((result, i) => {
       if (result.status === 'fulfilled') {
         parsed.push(result.value);
       } else {
-        errors.push(`${allFiles[i].name}: ${result.reason instanceof Error ? result.reason.message : 'Unknown error'}`);
+        const err = result.reason;
+        if ((err as any)?.isQuotaError) {
+          if (!quotaInfo) quotaInfo = { limitType: (err as any).limitType || 'daily', weeklyCount: (err as any).weeklyCount ?? 0 };
+        } else {
+          errors.push(`${allFiles[i].name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
       }
     });
     if (parsed.length > 0) onFilesAdded(parsed);
     if (errors.length > 0) setError(errors.join(' | '));
+    if (quotaInfo) onQuotaReached(quotaInfo);
     setIsProcessing(false);
-  }, [onFilesAdded, files.length, target]);
+  }, [onFilesAdded, files.length, target, onQuotaReached]);
 
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files); }, [handleFiles]);
 
@@ -1567,8 +1590,8 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
           onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleDrop(e); }}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-          className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${files.length >= 3 ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'}`}
-          onClick={() => { if (files.length < 3) document.getElementById('file-input')?.click(); }}
+          className={`relative rounded-2xl p-10 text-center transition-all duration-500 group overflow-hidden ${isDragging ? 'border-2 border-blue-500 bg-blue-500/[0.06] scale-[1.01]' : 'border-2 border-dashed border-white/[0.08] hover:border-white/[0.15] bg-white/[0.015]'} ${(files.length >= 3 || quotaLocked) ? 'opacity-50 pointer-events-none cursor-not-allowed' : 'cursor-pointer'}`}
+          onClick={() => { if (files.length < 3 && !quotaLocked) document.getElementById('file-input')?.click(); }}
         >
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.04] via-transparent to-blue-600/[0.02]" />
@@ -2488,7 +2511,14 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
             );
           }
           if (line.trim() === '') return <div key={index} className="h-1.5" />;
-          let parsed = line;
+          const escapeHtml = (str: string): string =>
+            str
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+          let parsed = escapeHtml(line);
           parsed = parsed.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
           parsed = parsed.replace(/\*(.*?)\*/g, '<em class="text-gray-400 italic">$1</em>');
           parsed = parsed.replace(/`(.*?)`/g, '<code class="px-1 py-0.5 text-[11px] bg-white/[0.06] text-blue-300 rounded font-mono">$1</code>');
@@ -2792,6 +2822,85 @@ function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
   );
 }
 
+function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 'weekly'; weeklyCount: number; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const WEEKLY_LIMIT = 35;
+  const weeklyPct = Math.min((weeklyCount / WEEKLY_LIMIT) * 100, 100);
+  const isWeekly = limitType === 'weekly';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+      <div
+        className="relatch-overlay-enter absolute inset-0 bg-black/55"
+        style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="relatch-quota-title"
+        className="relatch-popup-enter relative w-full max-w-sm rounded-2xl border border-white/[0.08] p-7 text-center"
+        style={{
+          background: 'rgba(12,16,24,0.92)',
+          boxShadow: '0 0 40px rgba(58,123,255,0.18)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
+        }}
+      >
+        <div className="w-11 h-11 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+          <Lock className="w-5 h-5 text-amber-400" />
+        </div>
+        <h2 id="relatch-quota-title" className="text-base font-bold text-white tracking-tight">
+          {isWeekly ? 'Weekly limit reached' : 'Daily limit reached'}
+        </h2>
+        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed max-w-[260px] mx-auto">
+          {isWeekly
+            ? <>You've used all <span className="text-white font-medium">35 generations</span> for this week. Your quota resets next week.</>
+            : <>You've used all <span className="text-white font-medium">5 free generations</span> for today. Your daily quota resets tomorrow.</>}
+        </p>
+        <div className="mt-4 text-left">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] text-gray-500">Weekly usage</span>
+            <span className="text-[11px] text-gray-400 font-mono">{weeklyCount} / {WEEKLY_LIMIT}</span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${weeklyPct}%`, background: weeklyPct >= 100 ? '#f59e0b' : 'linear-gradient(90deg, #3b82f6, #2563eb)' }}
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-600 mt-4 leading-relaxed">
+          Relatch is in product validation — per-user generation is capped to ensure fair access for everyone while we scale.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-5 px-6 py-2 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97]"
+          style={{
+            background: 'linear-gradient(180deg, #3b82ff, #2563ff)',
+            boxShadow: '0 0 24px rgba(59,130,255,0.28)',
+          }}
+        >
+          Got it
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function AgentSelector({ target, locked, onConfirm, requireAuth }: {
   target: 'claude' | 'codex';
   locked: boolean;
@@ -2978,6 +3087,9 @@ export default function App() {
   // skill name / notes / categories / target â†’ new signature â†’ flow resets.
   const [videoSeenSignature, setVideoSeenSignature] = useState<string | null>(null);
   const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly'; weeklyCount: number } | null>(null);
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const quotaReached = quotaInfo !== null;
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
   const canGoNext =
@@ -2997,6 +3109,10 @@ export default function App() {
   const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
   const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
   const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
+  const handleQuotaReached = useCallback((info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => {
+    setQuotaInfo(info);
+    setShowQuotaModal(true);
+  }, []);
 
   useEffect(() => { if (isSignedIn) setAuthGateView(null); }, [isSignedIn]);
 
@@ -3023,6 +3139,7 @@ export default function App() {
   return (
     <>
     {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} />}
+    {showQuotaModal && quotaInfo && <QuotaModal limitType={quotaInfo.limitType} weeklyCount={quotaInfo.weeklyCount} onClose={() => setShowQuotaModal(false)} />}
     <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
@@ -3145,6 +3262,8 @@ export default function App() {
                   onRemoveFile={handleRemoveFile}
                   onSampleLoad={handleAddSample}
                   target={config.target}
+                  onQuotaReached={handleQuotaReached}
+                  quotaLocked={quotaReached}
                 />
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
