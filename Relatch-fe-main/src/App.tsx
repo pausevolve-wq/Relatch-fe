@@ -2858,8 +2858,8 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
           WebkitBackdropFilter: 'blur(18px)',
         }}
       >
-        <div className="w-11 h-11 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-          <img src="/lock.png" className="w-5 h-5 object-contain" alt="" />
+        <div className="mx-auto mb-4 flex items-center justify-center">
+          <img src="/lock.png" className="w-9 h-9 object-contain" alt="" />
         </div>
         <h2 id="relatch-quota-title" className="text-base font-bold text-white tracking-tight">
           {isWeekly ? `Weekly Quota Exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Daily Quota Exhausted 5 / 5'}
