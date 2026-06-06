@@ -311,7 +311,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   }
 
   if (pdfjsText.length < 50) {
-    warnings.push('PDF text layer empty â€” attempting OCR extraction.');
+    warnings.push('PDF text layer empty - attempting OCR extraction.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
       warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents.`);
@@ -323,7 +323,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
 
   // Confidence heuristic: escalate to OCR for diagram-heavy / text-sparse PDFs
   if (isPdfTextWeak(pdfjsText, numPages)) {
-    warnings.push('PDF appears diagram-heavy or text-sparse â€” attempting OCR for richer extraction.');
+    warnings.push('PDF appears diagram-heavy or text-sparse - attempting OCR for richer extraction.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
       warnings.push(`Enhanced extraction via OCR (${ocrResult.source}).`);
@@ -371,7 +371,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     } catch {
     }
 
-    warnings.push('DOCX extraction failed â€” attempting OCR.');
+    warnings.push('DOCX extraction failed - attempting OCR.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
       warnings.push(`Text extracted via OCR (${ocrResult.source}).`);
