@@ -329,7 +329,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
       warnings.push(`Enhanced extraction via OCR (${ocrResult.source}).`);
       return { type: 'pdf', text: ocrResult.text, warnings };
     }
-    warnings.push('OCR did not improve extraction â€” using text layer.');
+    warnings.push('OCR did not improve extraction — using text layer.');
   }
 
   return { type: 'pdf', text: pdfjsText, warnings };
@@ -361,7 +361,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     const text = lines.join('\n');
     if (text.trim().length > 0) return { type: 'docx', text: stripArtifacts(text), warnings };
   } catch (err) {
-    warnings.push('DOCX structure is complex â€” attempting secondary extraction.');
+    warnings.push('DOCX structure is complex — attempting secondary extraction.');
     try {
       const fallbackBuffer = await readAsArrayBuffer(file);
       const fallback = stripXmlArtifacts(decodeArrayBuffer(new Uint8Array(fallbackBuffer), 'utf-8'));
