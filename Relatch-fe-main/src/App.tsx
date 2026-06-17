@@ -795,7 +795,7 @@ const CODEX_NATIVE_DOMAINS = [
     role: 'an API design reviewer operating within defined contract standards and versioning constraints â€” flags breaking changes and enforces error-response conventions',
     outputType: 'API specs, endpoint documentation, integration guides, and contract validation reports',
     frame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
-    keywords: /\b(endpoint|openapi|swagger|rest|graphql|grpc|webhook|rate\.?limit|authentication|authorization|oauth|jwt|api\.?key|versioning|breaking\.?change|idempotent|pagination|cursor|response\.?code|status\.?code|contract|schema\.?validation|json\.?schema|content\.?type|api\.?first|consumer\.?driven|api\.?gateway|graphql\.?schema|resolver)\b/i,
+    keywords: /\b(endpoint|endpoints|restful|crud|payload|openapi|swagger|rest|graphql|grpc|webhook|rate\.?limit|authentication|authorization|oauth|jwt|api\.?key|versioning|breaking\.?change|idempotent|pagination|cursor|response\.?code|status\.?code|contract|schema\.?validation|json\.?schema|content\.?type|api\.?first|consumer\.?driven|api\.?gateway|graphql\.?schema|resolver)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'specialist' as const,
