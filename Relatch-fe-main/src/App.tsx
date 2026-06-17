@@ -751,7 +751,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
   api_design: {
     codexRole: 'an API design reviewer operating within defined contract standards and versioning constraints â€" flags breaking changes and enforces error-response conventions',
     codexFrame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
-    codexKeywordsExtra: /\b(rest\.?api|api\.?design|http\.?method|http\.?verb|resource\.?design|resource\.?model|api\.?evolution|api\.?lifecycle|api\.?strategy|api\.?contract|api\.?versioning|hypermedia|hateoas|self\.?link|link\.?relation|api\.?style|api\.?consumer|url\.?convention)\b/i,
+    codexKeywordsExtra: /\b(restful|endpoints|crud|payload|idempotency|rest[\s.-]?api|api[\s.-]?design|http[\s.-]?method|http[\s.-]?verb|resource[\s.-]?design|resource[\s.-]?model|api[\s.-]?evolution|api[\s.-]?lifecycle|api[\s.-]?strategy|api[\s.-]?contract|api[\s.-]?versioning|hypermedia|hateoas|self[\s.-]?link|link[\s.-]?relation|api[\s.-]?style|api[\s.-]?consumer|url[\s.-]?convention)\b/i,
   },
 };
 
