@@ -748,12 +748,13 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
     codexFrame: 'audit sales and ad copy against persuasion frameworks, surface weak hooks and unclear CTAs, and recommend specific word-level improvements before going live',
     codexKeywordsExtra: /\b(copy\.?review|headline\.?audit|cta\.?test|conversion\.?review|ad\.?copy\.?check|lander\.?review|swipe\.?critique)\b/i,
   },
+  api_design: {
+    codexRole: 'an API design reviewer operating within defined contract standards and versioning constraints â€" flags breaking changes and enforces error-response conventions',
+    codexFrame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
+    codexKeywordsExtra: /\b(rest\.?api|api\.?design|http\.?method|http\.?verb|resource\.?design|resource\.?model|api\.?evolution|api\.?lifecycle|api\.?strategy|api\.?contract|api\.?versioning|hypermedia|hateoas|self\.?link|link\.?relation|api\.?style|api\.?consumer|url\.?convention)\b/i,
+  },
 };
 
-// v2.3: Codex-native domains â€” only searched when target === 'codex'. Never included in
-// Claude detection pool. These cover dominant Codex CLI use cases that have no equivalent
-// in the Claude SKILL_DOMAINS (which were authored for behavioral/persona extraction).
-// Role and frame are already Codex-oriented; no supplement entry needed.
 const CODEX_NATIVE_DOMAINS = [
   {
     id: 'devops',
@@ -3284,7 +3285,7 @@ export default function App() {
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
-            <p className="text-[11px] text-gray-700">Relatch v2.1</p>
+            <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
           </div>
         </footer>
       </div>
