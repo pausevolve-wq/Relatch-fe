@@ -3281,7 +3281,7 @@ export default function App() {
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
-            <p className="text-[11px] text-gray-700">Relatch v2.2</p>
+            <p className="text-[11px] text-gray-700">Relatch v2.3</p>
           </div>
         </footer>
       </div>
