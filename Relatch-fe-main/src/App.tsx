@@ -261,7 +261,7 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string 
   }
 }
 
-// Returns true when pdfjs-extracted text is structurally weak for the document size â€”
+// Returns true when pdfjs-extracted text is structurally weak for the document size  - 
 // indicating a diagram-heavy or caption-dominated PDF where OCR may recover more content.
 // Only applied for multi-page PDFs (single-page cover/title pages are trusted as-is).
 // Requires at least 2 of 3 signals to fire, reducing false positives on short-but-valid docs.
@@ -270,14 +270,14 @@ function isPdfTextWeak(text: string, numPages: number): boolean {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   if (lines.length === 0) return true;
 
-  // Signal 1: Sparse text per page â€” architecture/diagram PDFs typically extract < 200 chars/page
+  // Signal 1: Sparse text per page - architecture/diagram PDFs typically extract < 200 chars/page
   const isSparse = (text.length / numPages) < 200;
 
-  // Signal 2: Fragment-dominated â€” avg line < 38 chars means mostly labels/captions, not prose
+  // Signal 2: Fragment-dominated - avg line < 38 chars means mostly labels/captions, not prose
   const avgLineLen = lines.reduce((s, l) => s + l.length, 0) / lines.length;
   const isFragmentDominated = avgLineLen < 38;
 
-  // Signal 3: Prose-less â€” < 8% of lines end with sentence punctuation
+  // Signal 3: Prose-less - < 8% of lines end with sentence punctuation
   const sentenceLikeLines = lines.filter(l => /[.!?]$/.test(l)).length;
   const isProseLess = (sentenceLikeLines / lines.length) < 0.08;
 
@@ -621,9 +621,9 @@ const SKILL_DOMAINS = [
 // v2.2: derive default Codex generation shape from the Claude template assignment.
 // Used only when the detected SKILL_DOMAIN doesn't override codexShape explicitly.
 // Mapping reflects each shape's cognitive profile:
-//   B (code) â†’ execute     â€” procedural code work
-//   A (persona/voice) â†’ expertise â€” creative judgment, human-loop
-//   C (process) / D (domain) â†’ specialist â€” constrained role with branching/bounds
+//   B (code) â†’ execute     - procedural code work
+//   A (persona/voice) â†’ expertise - creative judgment, human-loop
+//   C (process) / D (domain) â†’ specialist - constrained role with branching/bounds
 // Falls back to 'execute' (the 70% bet) for unknown templates.
 function templateToShape(tmpl: string | undefined): 'execute' | 'expertise' | 'specialist' {
   if (tmpl === 'B') return 'execute';
@@ -632,9 +632,9 @@ function templateToShape(tmpl: string | undefined): 'execute' | 'expertise' | 's
   return 'execute';
 }
 
-// v2.3: Codex domain intelligence â€” separate from Claude path, never collides.
+// v2.3: Codex domain intelligence - separate from Claude path, never collides.
 // CODEX_DOMAIN_SUPPLEMENTS provides Codex-specific role/frame/keyword overrides for every
-// existing SKILL_DOMAIN. Claude path is untouched â€” supplements are only applied when
+// existing SKILL_DOMAIN. Claude path is untouched - supplements are only applied when
 // target === 'codex'. The Claude role/frame values in SKILL_DOMAINS are never modified.
 interface CodexDomainSupplement {
   codexRole: string;
@@ -655,7 +655,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
   },
   software_engineering: {
     codexRole: 'a senior software engineer executing codebase-specific tasks according to the architectural patterns and conventions visible in the source',
-    codexFrame: 'implement, refactor, and verify code against the architectural decisions and conventions extracted from the source â€” no patterns invented outside what the source shows',
+    codexFrame: 'implement, refactor, and verify code against the architectural decisions and conventions extracted from the source - no patterns invented outside what the source shows',
     codexKeywordsExtra: /\b(goroutine|channel|go\.mod|go\.sum|cargo\.toml|cargo\.lock|impl|trait|lifetime|borrow|rustc|tokio|actix|axum|wasm|dataclass|pydantic|fastapi|django|flask|sqlalchemy|alembic|celery|uvicorn|gunicorn|requirements\.txt|pyproject|decorator|pytest|bash|shell\.?script|zsh|chmod|cron|crontab|makefile|cmake|gradle|maven|pom\.xml|build\.gradle|refactor|migration|pull\.?request|code\.?review|lint\.?error|build\.?fail|ci\.?pipeline|test\.?coverage|dependency|package\.?lock)\b/i,
   },
   growth_marketing: {
@@ -665,7 +665,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
   },
   product_design: {
     codexRole: 'a UX design reviewer auditing interface decisions against usability criteria and design system compliance before handoff',
-    codexFrame: 'review designs for friction, accessibility gaps, and design system violations â€” surface minimal-diff corrections before engineering handoff',
+    codexFrame: 'review designs for friction, accessibility gaps, and design system violations - surface minimal-diff corrections before engineering handoff',
     codexKeywordsExtra: /\b(design\.?review|handoff|component\.?spec|design\.?token|accessibility\.?audit|contrast\.?ratio|focus\.?trap)\b/i,
   },
   education: {
@@ -674,7 +674,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
     codexKeywordsExtra: /\b(course\.?structure|learning\.?path|assessment\.?rubric|competency|objective\.?alignment|lms|scorm)\b/i,
   },
   legal: {
-    codexRole: 'a legal document drafter operating within strict compliance boundaries â€” refuses advisory, interpretive, or strategic legal decisions',
+    codexRole: 'a legal document drafter operating within strict compliance boundaries - refuses advisory, interpretive, or strategic legal decisions',
     codexFrame: 'produce structured legal documents from source templates, flag ambiguous clauses for human review, refuse all legal advice or risk assessment',
     codexKeywordsExtra: /\b(clause\.?template|contract\.?template|nda|msa|sla|compliance\.?checklist|gdpr\.?article|dpa|data\.?processing)\b/i,
   },
@@ -690,7 +690,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
   },
   hr_people: {
     codexRole: 'an HR document drafter and people-ops workflow executor operating within defined policy and legal boundaries',
-    codexFrame: 'generate structured HR documents and execute onboarding workflows from defined templates â€” escalate policy-ambiguous and jurisdiction-specific edge cases',
+    codexFrame: 'generate structured HR documents and execute onboarding workflows from defined templates - escalate policy-ambiguous and jurisdiction-specific edge cases',
     codexKeywordsExtra: /\b(hr\.?template|offer\.?template|policy\.?document|handbook\.?section|onboarding\.?checklist|leveling\.?rubric)\b/i,
   },
   data_science: {
@@ -714,7 +714,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
     codexKeywordsExtra: /\b(mece\.?check|slide\.?review|deck\.?structure|hypothesis\.?test|executive\.?summary|issue\.?tree|so\.?what)\b/i,
   },
   security: {
-    codexRole: 'a security audit executor operating within defined threat models and remediation playbooks â€” escalates novel threats, unknown attack vectors, and incidents immediately',
+    codexRole: 'a security audit executor operating within defined threat models and remediation playbooks - escalates novel threats, unknown attack vectors, and incidents immediately',
     codexFrame: 'execute security assessments against defined checklists, implement hardening steps from playbooks, and escalate any threat pattern not covered by the source model',
     codexKeywordsExtra: /\b(security\.?checklist|hardening\.?guide|remediation\.?playbook|audit\.?procedure|compliance\.?scan|soc2|iso27001|pen\.?test\.?report)\b/i,
   },
@@ -724,7 +724,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
     codexKeywordsExtra: /\b(caption\.?review|post\.?review|platform\.?guideline|community\.?standard|content\.?policy|hashtag\.?strategy|scheduling)\b/i,
   },
   healthcare: {
-    codexRole: 'a clinical documentation executor operating strictly within defined protocols â€” refuses all diagnostic, prescriptive, or clinical judgment decisions without human oversight',
+    codexRole: 'a clinical documentation executor operating strictly within defined protocols - refuses all diagnostic, prescriptive, or clinical judgment decisions without human oversight',
     codexFrame: 'generate protocol-compliant clinical documents from defined templates, apply care plan structures, and escalate all clinical judgment, medication, and diagnostic calls',
     codexKeywordsExtra: /\b(clinical\.?protocol|care\.?pathway|documentation\.?template|patient\.?summary|discharge\.?summary|referral\.?letter)\b/i,
   },
@@ -735,7 +735,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
   },
   real_estate: {
     codexRole: 'a real estate document generator operating within defined listing templates and transaction compliance rules',
-    codexFrame: 'produce listings, comparative analyses, and transaction documents from templates â€” escalates regulatory, valuation, and negotiation decisions to human agents',
+    codexFrame: 'produce listings, comparative analyses, and transaction documents from templates - escalates regulatory, valuation, and negotiation decisions to human agents',
     codexKeywordsExtra: /\b(listing\.?template|property\.?report|comp\.?analysis|transaction\.?checklist|disclosure\.?form|lease\.?template)\b/i,
   },
   creative_writing: {
@@ -761,7 +761,7 @@ const CODEX_NATIVE_DOMAINS = [
     label: 'DevOps & infrastructure',
     role: 'a DevOps engineer executing infrastructure automation and deployment tasks within defined safety rails and rollback criteria',
     outputType: 'infrastructure configs, deployment scripts, and operational runbooks',
-    frame: 'automate, deploy, and validate infrastructure changes â€” verify each step before proceeding, maintain rollback readiness at every stage',
+    frame: 'automate, deploy, and validate infrastructure changes - verify each step before proceeding, maintain rollback readiness at every stage',
     keywords: /\b(terraform|kubernetes|k8s|helm|docker|ci\.?cd|pipeline|deploy|rollback|infra|pod|node|cluster|ingress|nginx|github\.?action|jenkins|ansible|cloudformation|vpc|subnet|iam|s3|ecr|ecs|eks|gke|aks|argocd|flux|gitops|slo|sli|runbook|incident|escalation|dockerfile|docker\.?compose|service\.?mesh|istio|envoy)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'flowchart'],
@@ -772,7 +772,7 @@ const CODEX_NATIVE_DOMAINS = [
     label: 'testing & quality assurance',
     role: 'a QA engineer executing test suite implementations, fixture setups, mock configurations, and coverage validation workflows',
     outputType: 'test suites, fixture configurations, mock setups, and coverage reports',
-    frame: 'implement tests against defined coverage targets and patterns â€” set up fixtures and mocks, validate boundary conditions, and verify before merging',
+    frame: 'implement tests against defined coverage targets and patterns - set up fixtures and mocks, validate boundary conditions, and verify before merging',
     keywords: /\b(unit\.?test|integration\.?test|e2e|end\.?to\.?end|test\.?suite|fixture|mock|stub|spy|assertion|coverage|jest|vitest|pytest|mocha|cypress|playwright|selenium|test\.?driven|tdd|bdd|given\.?when\.?then|snapshot|regression|smoke\.?test|load\.?test|performance\.?test|test\.?data|factory|faker|seeding|test\.?runner|beforeEach|afterEach)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'table'],
@@ -781,9 +781,9 @@ const CODEX_NATIVE_DOMAINS = [
   {
     id: 'database_engineering',
     label: 'database engineering',
-    role: 'a database engineer executing schema migrations and query optimizations within defined safety boundaries â€” escalates destructive or high-risk operations',
+    role: 'a database engineer executing schema migrations and query optimizations within defined safety boundaries - escalates destructive or high-risk operations',
     outputType: 'schema migrations, query optimizations, index strategies, and data model documentation',
-    frame: 'design and execute database changes safely â€” validate before applying, maintain rollback scripts, and escalate any operation that cannot be reversed or affects production data',
+    frame: 'design and execute database changes safely - validate before applying, maintain rollback scripts, and escalate any operation that cannot be reversed or affects production data',
     keywords: /\b(migration|schema|index|query\.?optimization|foreign\.?key|constraint|transaction|deadlock|replication|sharding|partition|stored\.?procedure|trigger|view|materialized|postgres|mysql|mongodb|redis|cassandra|dynamodb|supabase|prisma|alembic|flyway|liquibase|orm|explain\.?plan|query\.?plan|rollback\.?migration|seed\.?data|database\.?design|erd|entity\.?relationship)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
@@ -792,7 +792,7 @@ const CODEX_NATIVE_DOMAINS = [
   {
     id: 'api_design',
     label: 'API design & integration',
-    role: 'an API design reviewer operating within defined contract standards and versioning constraints â€” flags breaking changes and enforces error-response conventions',
+    role: 'an API design reviewer operating within defined contract standards and versioning constraints - flags breaking changes and enforces error-response conventions',
     outputType: 'API specs, endpoint documentation, integration guides, and contract validation reports',
     frame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
     keywords: /\b(endpoint|endpoints|restful|crud|payload|openapi|swagger|rest|graphql|grpc|webhook|rate\.?limit|authentication|authorization|oauth|jwt|api\.?key|versioning|breaking\.?change|idempotent|pagination|cursor|response\.?code|status\.?code|contract|schema\.?validation|json\.?schema|content\.?type|api\.?first|consumer\.?driven|api\.?gateway|graphql\.?schema|resolver)\b/i,
@@ -805,7 +805,7 @@ const CODEX_NATIVE_DOMAINS = [
     label: 'frontend engineering & design systems',
     role: 'a frontend engineer executing component builds, CSS system implementations, and design token applications according to the conventions and constraints visible in the source',
     outputType: 'component code, CSS systems, design token files, and frontend architecture documentation',
-    frame: 'implement frontend code from design specifications â€” no CSS values invented outside defined tokens, no component patterns added beyond what the source shows, verify token application before shipping',
+    frame: 'implement frontend code from design specifications - no CSS values invented outside defined tokens, no component patterns added beyond what the source shows, verify token application before shipping',
     keywords: /\b(design\.?token|css\.?variable|css\.?custom\.?property|tailwind|styled\.?component|css\.?module|storybook|atomic\.?design|bem|scss|sass\.?mixin|color\.?system|typography\.?scale|spacing\.?system|spacing\.?scale|breakpoint|component\.?spec|component\.?variant|figma\.?variable|figma\.?token|token\.?set|theme\.?variable|dark\.?mode|font\.?scale|line\.?height|z\.?index|border\.?radius|shadow\.?token|motion\.?token|animation\.?token|css\.?architecture|layout\.?system|grid\.?system|flex\.?utility|utility\.?class|design\.?system\.?implementation|component\.?library\.?implementation|style\.?dictionary|vanilla\.?extract|stitches|panda\.?css)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'table'],
@@ -814,9 +814,9 @@ const CODEX_NATIVE_DOMAINS = [
   {
     id: 'technical_documentation',
     label: 'technical documentation & developer writing',
-    role: 'a technical writer executing documentation tasks â€” README generation, API reference writing, changelog authoring, and architecture documentation â€” according to the structure conventions and style patterns visible in the source',
+    role: 'a technical writer executing documentation tasks - README generation, API reference writing, changelog authoring, and architecture documentation - according to the structure conventions and style patterns visible in the source',
     outputType: 'READMEs, API reference docs, changelogs, architecture decision records, and technical guides',
-    frame: 'produce technical documentation that matches the structural patterns and terminology of the source â€” consistent heading hierarchy, code example placement, and section ordering; escalate when source material is ambiguous or scope is unclear',
+    frame: 'produce technical documentation that matches the structural patterns and terminology of the source - consistent heading hierarchy, code example placement, and section ordering; escalate when source material is ambiguous or scope is unclear',
     keywords: /\b(readme|changelog|architecture\.?decision\.?record|adr|api\.?reference|api\.?doc|technical\.?guide|developer\.?guide|integration\.?guide|getting\.?started|installation\.?guide|contributing\.?guide|code\.?example|snippet\.?documentation|docstring|jsdoc|typedoc|sphinx|mkdocs|docusaurus|gitbook|confluence\.?page|wiki\.?page|runbook\.?doc|technical\.?spec|design\.?doc|engineering\.?spec|rfc|request\.?for\.?comment|tech\.?spec|system\.?design|c4\.?diagram|sequence\.?diagram|data\.?flow\.?diagram)\b/i,
     template: 'D' as const,
     richFormats: ['codeblock', 'table'],
@@ -825,9 +825,9 @@ const CODEX_NATIVE_DOMAINS = [
   {
     id: 'content_operations',
     label: 'content operations & editorial production',
-    role: 'a content operations reviewer auditing drafts and briefs against defined frameworks, angle structures, and format standards â€” operating within the editorial patterns established in the source',
+    role: 'a content operations reviewer auditing drafts and briefs against defined frameworks, angle structures, and format standards - operating within the editorial patterns established in the source',
     outputType: 'content briefs, article drafts, editorial audits, and copy production workflows',
-    frame: 'review and produce content according to the structural frameworks and angle formulas defined in the source â€” flag weak hooks, inconsistent structure, and missing format elements before publishing; escalate tone and brand-voice decisions',
+    frame: 'review and produce content according to the structural frameworks and angle formulas defined in the source - flag weak hooks, inconsistent structure, and missing format elements before publishing; escalate tone and brand-voice decisions',
     keywords: /\b(content\.?brief|editorial\.?framework|content\.?template|writing\.?framework|content\.?pillar|content\.?angle|story\.?angle|narrative\.?framework|article\.?structure|blog\.?framework|newsletter\.?template|email\.?newsletter|video\.?script|script\.?template|podcast\.?outline|episode\.?brief|show\.?note|content\.?formula|hook\.?formula|headline\.?formula|listicle\.?structure|thought\.?leadership\.?framework|content\.?calendar\.?template|editorial\.?guideline|writing\.?style\.?guide|content\.?swipe|swipe\.?file|angle\.?swipe|repurpose\.?framework|content\.?series\.?structure|content\.?type\.?guide)\b/i,
     template: 'A' as const,
     richFormats: ['examples'],
@@ -837,7 +837,7 @@ const CODEX_NATIVE_DOMAINS = [
 
 function detectSkillDomain(fileName: string, text: string, target: 'claude' | 'codex' = 'claude') {
   // Codex path expands the detection pool to include Codex-native domains.
-  // Claude path searches SKILL_DOMAINS only â€” behavior byte-identical to pre-v2.3.
+  // Claude path searches SKILL_DOMAINS only - behavior byte-identical to pre-v2.3.
   const domainsToSearch: any[] = target === 'codex'
     ? [...SKILL_DOMAINS, ...CODEX_NATIVE_DOMAINS]
     : [...SKILL_DOMAINS];
@@ -847,7 +847,7 @@ function detectSkillDomain(fileName: string, text: string, target: 'claude' | 'c
   const scores = domainsToSearch.map(d => {
     const baseKeywords: RegExp = d.keywords;
     // For Codex path: add extra keyword hits from supplements where defined.
-    // Extra keywords are Codex-vocabulary additions â€” they don't exist on the Claude path.
+    // Extra keywords are Codex-vocabulary additions - they don't exist on the Claude path.
     const supplement = CODEX_DOMAIN_SUPPLEMENTS[d.id];
     const extraKeywords: RegExp | null = (target === 'codex' && supplement?.codexKeywordsExtra)
       ? supplement.codexKeywordsExtra
@@ -878,7 +878,7 @@ function profileDocument(file: File, extractedText: string, extractionWarning?: 
   if (textLength > 40000) { sizeClass = 'large'; charCap = 8000; }
   else if (textLength > 3000) { sizeClass = 'medium'; charCap = 5000; }
 
-  // Template E: Structured financial data â€” must be checked BEFORE the REJECT gate.
+  // Template E: Structured financial data - must be checked BEFORE the REJECT gate.
   // Finance CSVs with numeric-heavy rows often have low word counts (numbers don't
   // count well) and would otherwise be incorrectly rejected as "no behavioral patterns."
   // .xlsx/.xls deferred post-launch (requires binary parser dependency).
@@ -948,7 +948,7 @@ function profileDocument(file: File, extractedText: string, extractionWarning?: 
     'security', 'healthcare', 'academic_research', 'real_estate', 'seo', 'growth_marketing',
     'data_science', 'pr_communications'];
   if (detected && domainDTemplates.includes(detected.id)) {
-    // Finance CSVs that passed the word-count gate above land here â€” intercept before D.
+    // Finance CSVs that passed the word-count gate above land here - intercept before D.
     // Any CSV flagged as finance (even with 100+ words) belongs in Template E, not D.
     if (detected.id === 'finance' && isStructuredFinance) {
       return { template: 'E' as const, richFormats: ['table', 'matrix', 'bullets'], charCap, sizeClass, contentType: 'structured-data', rejectReason: undefined };
@@ -961,7 +961,7 @@ function profileDocument(file: File, extractedText: string, extractionWarning?: 
     return { template: 'D' as const, richFormats: (detected as any).richFormats || ['table'], charCap, sizeClass, contentType: 'professional', rejectReason: undefined };
   }
 
-  // Template A: Default â€” persona, voice, creative, general
+  // Template A: Default - persona, voice, creative, general
   const detectedTemplate = detected ? (detected as any).template || 'A' : 'A';
   const detectedRichFormats = detected ? (detected as any).richFormats || ['examples'] : ['examples'];
   return { template: detectedTemplate as 'A', richFormats: detectedRichFormats, charCap, sizeClass, contentType: 'prose', rejectReason: undefined };
@@ -1127,11 +1127,11 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
         .slice(0, 5)
         .map(l => `- ${l.charAt(0).toUpperCase() + l.slice(1).replace(/[.!?]$/, '')}.`)
         .join('\n')
-    : `- Every output must serve a clear, specific purpose â€” not just fill space.
+    : `- Every output must serve a clear, specific purpose - not just fill space.
 - Precision and specificity outweigh length and elaboration every time.
 - The audience's reaction is the only reliable measure of quality.
 - Patterns that work should be repeated deliberately; everything else should be cut.
-- Constraints are information â€” what you exclude defines the work as much as what you include.`;
+- Constraints are information - what you exclude defines the work as much as what you include.`;
 
   const alwaysLines = actionLines
     .filter(l => !/\b(never|avoid|don't|not)\b/i.test(l))
@@ -1145,17 +1145,17 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
 
   const alwaysSection = alwaysLines.length >= 3
     ? alwaysLines.join('\n')
-    : `- Deliver complete, usable outputs â€” never outlines or half-finished drafts.
+    : `- Deliver complete, usable outputs - never outlines or half-finished drafts.
 - Match the tone and register of the source material exactly.
-- Lead with what matters most â€” bury nothing important below the fold.
+- Lead with what matters most - bury nothing important below the fold.
 - Apply structural patterns consistently across every output.
-- Stay specific â€” if it could have been written for anyone, rewrite it.`;
+- Stay specific - if it could have been written for anyone, rewrite it.`;
 
   const neverSection = neverLines.length >= 2
     ? neverLines.join('\n')
     : `- Never produce output that ignores the established patterns of this domain.
 - Never use generic language when specific language is available.
-- Never let length substitute for substance â€” cut anything that doesn't earn its place.
+- Never let length substitute for substance - cut anything that doesn't earn its place.
 - Never present a draft as finished work before testing it against the quality bar.`;
 
   const createSection = ruleLines.length >= 3
@@ -1164,14 +1164,14 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
         .map(l => `- ${l.charAt(0).toUpperCase() + l.slice(1).replace(/[.!?]$/, '')}.`)
         .join('\n')
     : `- Structure every output so the most important element comes first.
-- Use the length the content demands â€” no more, no less.
+- Use the length the content demands - no more, no less.
 - Match the vocabulary and register of this domain exactly.
 - Make every sentence earn its place before including it in the final output.`;
 
   const voiceWords = domainWords.slice(0, 8).join(', ');
   const vocabLine = voiceWords
     ? `Key vocabulary from this domain: ${voiceWords}.`
-    : `Vocabulary must be native to this domain â€” avoid borrowed jargon from adjacent fields.`;
+    : `Vocabulary must be native to this domain - avoid borrowed jargon from adjacent fields.`;
 
   const sanitizedUseCases = (domainWords.slice(0, 3).length > 0
     ? domainWords.slice(0, 3).map(w => sanitizeYamlValue(w)).join(', ')
@@ -1184,13 +1184,13 @@ use_cases: [${sanitizedUseCases}]
 ---
 
 ## Identity & Role
-You are ${role} who thinks, decides, and creates using the exact patterns distilled from the source material below. You do not explain your methodology â€” you execute it. Every output you produce should be indistinguishable from someone who has spent years learning to ${frame}.
+You are ${role} who thinks, decides, and creates using the exact patterns distilled from the source material below. You do not explain your methodology - you execute it. Every output you produce should be indistinguishable from someone who has spent years learning to ${frame}.
 
 ## Core Principles
 ${principles}
 
 ## How to Think
-Start by identifying the single most important outcome this output must achieve. Work backwards from that outcome: what structure, tone, and content best serve it? Treat every constraint as useful information â€” the things you exclude define the work as much as what you include. When uncertain, default to what the source material does, not what feels intuitively right in the moment.
+Start by identifying the single most important outcome this output must achieve. Work backwards from that outcome: what structure, tone, and content best serve it? Treat every constraint as useful information - the things you exclude define the work as much as what you include. When uncertain, default to what the source material does, not what feels intuitively right in the moment.
 
 ## How to Create
 ${createSection}
@@ -1202,10 +1202,10 @@ ${alwaysSection}
 ${neverSection}
 
 ## Voice & Language
-${vocabLine} Sentences must move forward â€” no filler, no throat-clearing, no hedging. The opening must earn attention immediately. The closing must prompt a specific response or action. Every transition should be invisible. If a sentence can be cut without any loss of meaning, cut it.
+${vocabLine} Sentences must move forward - no filler, no throat-clearing, no hedging. The opening must earn attention immediately. The closing must prompt a specific response or action. Every transition should be invisible. If a sentence can be cut without any loss of meaning, cut it.
 
 ## Quality Bar
-The output is ready when it matches the pattern of the source material closely enough that someone familiar with this domain would not suspect it was produced without that context. If it reads as generic â€” if it could have been written for anyone â€” it needs another pass. Specificity is the quality bar. If it does not feel like it came from a ${role}, it is not done yet.`;
+The output is ready when it matches the pattern of the source material closely enough that someone familiar with this domain would not suspect it was produced without that context. If it reads as generic - if it could have been written for anyone - it needs another pass. Specificity is the quality bar. If it does not feel like it came from a ${role}, it is not done yet.`;
 }
 
 function fixAiYamlFrontmatter(content: string): string {
@@ -1250,12 +1250,12 @@ function fixAiYamlFrontmatter(content: string): string {
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<string | { content: string; degraded: boolean }> {
-  // v2.4: shared Codex error stub â€” used at every point where Claude would fall through
+  // v2.4: shared Codex error stub - used at every point where Claude would fall through
   // to generateFallbackSkill(). Returns { content, degraded: true } so parseFile surfaces
   // the degraded warning. Structurally valid for Codex CLI; not enriched content.
   const codexErrorStub = (desc: string): { content: string; degraded: true } => {
     const s = fileName.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'my-skill';
-    return { content: `---\nname: ${s}\ndescription: "${desc}"\n---\n\n## When to Activate\n### Must Use\n- Retry generation with a cleaner source document\n### Recommended\n- Review source document for sufficient signal\n### Skip\n- Using this artifact as-is without regenerating\n\n## Key Principles\n- This artifact was not generated successfully â€” regenerate before use.`, degraded: true };
+    return { content: `---\nname: ${s}\ndescription: "${desc}"\n---\n\n## When to Activate\n### Must Use\n- Retry generation with a cleaner source document\n### Recommended\n- Review source document for sufficient signal\n### Skip\n- Using this artifact as-is without regenerating\n\n## Key Principles\n- This artifact was not generated successfully - regenerate before use.`, degraded: true };
   };
 
   if (!rawText || rawText.trim().length < 20) {
@@ -1266,16 +1266,16 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
   try {
     // v2.3: pass target to detectSkillDomain so Codex path searches CODEX_NATIVE_DOMAINS too.
     // profileDocument and generateFallbackSkill still call detectSkillDomain without target
-    // (Claude default) â€” their behavior is unchanged.
+    // (Claude default) - their behavior is unchanged.
     const detectedDomain = detectSkillDomain(fileName, rawText, target);
 
     // v2.3: look up Codex-specific role/frame overrides from CODEX_DOMAIN_SUPPLEMENTS.
-    // For CODEX_NATIVE_DOMAINS hits, supplement is undefined â€” their role/frame are already
+    // For CODEX_NATIVE_DOMAINS hits, supplement is undefined - their role/frame are already
     // Codex-oriented, so the fallback to detectedDomain?.role is correct in that case.
     const supplement = detectedDomain ? CODEX_DOMAIN_SUPPLEMENTS[(detectedDomain as any).id] : undefined;
 
     // v2.2: derive codexShape from detected domain (explicit override) or fall back to
-    // template-mapped default. Only sent when target === 'codex' â€” backend defaults to
+    // template-mapped default. Only sent when target === 'codex' - backend defaults to
     // 'execute' if absent, so omitting on Claude requests preserves the existing contract.
     const codexShape = target === 'codex'
       ? ((detectedDomain as any)?.codexShape || templateToShape((detectedDomain as any)?.template))
@@ -1294,7 +1294,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
         fileName,
         domainLabel: detectedDomain?.label || 'general professional',
         // v2.3: Codex path uses supplement.codexRole (operational constraint language) instead of
-        // the Claude-flavored role. Claude path is byte-identical â€” always takes the else branch.
+        // the Claude-flavored role. Claude path is byte-identical - always takes the else branch.
         domainRole: (target === 'codex' && supplement?.codexRole)
           ? supplement.codexRole
           : (detectedDomain as any)?.role || 'an expert',
@@ -1338,7 +1338,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     // v2.4: When the backend used the deterministic fallback assembler, surface a degraded
     // signal to parseFile so it can attach a warning to the file card.
-    // The artifact itself is structurally valid and renderable â€” this only adds a notice.
+    // The artifact itself is structurally valid and renderable - this only adds a notice.
     if (data.model === 'deterministic-fallback' && target === 'codex') {
       return { content: fixAiYamlFrontmatter(data.enriched), degraded: true };
     }
@@ -1391,7 +1391,7 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
       : extracted.text;
 
   // v2.4: enrichWithAI returns string on success or { content, degraded: true } when the
-  // backend used the deterministic Codex fallback assembler. Unpack here â€” content is always
+  // backend used the deterministic Codex fallback assembler. Unpack here - content is always
   // a string, degraded flag triggers a user-visible warning on the file card.
   const enrichResult = await enrichWithAI(
     textForEnrichment,
@@ -1411,7 +1411,7 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
   }
   const extractionWarning = [
     ...(extracted.warnings.length ? [extracted.warnings.join(' ')] : []),
-    ...(isDegraded ? ['Enrichment service was temporarily unavailable. This skill was assembled from your source using local signal extraction â€” review and refine before deploying.'] : []),
+    ...(isDegraded ? ['Enrichment service was temporarily unavailable. This skill was assembled from your source using local signal extraction - review and refine before deploying.'] : []),
   ].join(' ') || undefined;
 
   return {
@@ -1951,11 +1951,11 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
 
   // Smooth-scroll the video guide into view only on the falseâ†’true transition
   // (i.e. the user just clicked Download). Returning to Step 5 with the video
-  // already revealed must NOT auto-scroll â€” they should land where they left.
+  // already revealed must NOT auto-scroll - they should land where they left.
   useEffect(() => {
     const prev = prevVideoVisibleRef.current;
     prevVideoVisibleRef.current = videoVisible;
-    if (prev === null) return; // first render in this mount â€” no transition
+    if (prev === null) return; // first render in this mount - no transition
     if (videoVisible && !prev) {
       // Phase 1: scroll the video section into view immediately (no delay)
       requestAnimationFrame(() => {
@@ -2024,7 +2024,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
                 let cleanContent = content.replace(/\r/g, '').trim();
                 cleanContent = cleanContent.replace(/^```[a-z]*\n/i, '').replace(/\n```$/, '').trim();
 
-                // Codex target: strip backend frontmatter entirely â€” buildCodexSkillMd() is the
+                // Codex target: strip backend frontmatter entirely - buildCodexSkillMd() is the
                 // single owner of final Codex frontmatter. Return NOTES + BODY only.
                 if (config.target === 'codex') {
                   const notesBlock = (notes && notes.trim())
@@ -2088,7 +2088,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
                 }
 
                 // Residual FM guard: if a second (possibly unclosed) frontmatter block survived
-                // the first strip â€” e.g. when an existing skill file is re-uploaded as source â€”
+                // the first strip - e.g. when an existing skill file is re-uploaded as source  - 
                 // drop everything before the first ## section header.
                 if (body.startsWith('---')) {
                   const firstSection = body.search(/^##\s/m);
@@ -2156,7 +2156,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
               ? fileSlug.slice(slug.length + 1)
               : fileSlug;
             // Multi-file: drop the category infix from the filename. Category is
-            // implicit in the skill's organization â€” the filename should read as a
+            // implicit in the skill's organization - the filename should read as a
             // clean skill component (e.g. "fusion-finance.md"), not an internal tag.
             // Single-file path preserves `${slug}-${category}.md` byte-identically.
             const filename = activeFileCount > 1 && disambiguatedSlug
@@ -2206,7 +2206,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const zip = new JSZip();
     const slug = toSkillSlug(config.skillName);
     // Generate a minimal SKILL.md (name + description only). Do NOT promote any
-    // enriched file into this slot â€” each enriched file keeps its own filename.
+    // enriched file into this slot - each enriched file keeps its own filename.
     // Extract the domain from each file's frontmatter for the description.
     const domains = [...new Set(generatedFiles.map(f => {
       const m = f.content.match(/^domain:\s*"?([^"\n]+)"?/m);
@@ -2344,7 +2344,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
   };
 
-  // Single shared normalization function â€” used by preview, copy, yaml, and ZIP export.
+  // Single shared normalization function - used by preview, copy, yaml, and ZIP export.
   // Calls buildCodexSkillMd() then silently repairs any structural issues.
   // Never throws; always returns a string (empty string only if content is truly unrecoverable).
   const getNormalizedCodexSkillMd = (): string => {
