@@ -1455,7 +1455,8 @@ Audience context:
 - Solo founders and small teams
 - Building products fast with limited resources
 - Care about clarity over jargon`;
-const FORMSPREE_ENDPOINT = ((import.meta.env.VITE_FORMSPREE_ENDPOINT as string | undefined)?.trim() || 'https://formspree.io/f/xeepqopa');
+const SPLITFORMS_ENDPOINT = ((import.meta.env.VITE_SPLITFORMS_ENDPOINT as string | undefined)?.trim() || 'https://splitforms.com/api/submit');
+const SPLITFORMS_ACCESS_KEY = ((import.meta.env.VITE_SPLITFORMS_ACCESS_KEY as string | undefined)?.trim() || 'f277a53be64748cc802c0de0c130951f');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function toSkillSlug(name: string): string {
@@ -2423,10 +2424,11 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     try {
       setWaitlistSubmitting(true);
       const formBody = new URLSearchParams();
+      formBody.set('access_key', SPLITFORMS_ACCESS_KEY);
       formBody.set('email', email); formBody.set('source', 'relatch-step4');
       formBody.set('generatedFiles', (generatedFiles || []).map((file) => file.filename).join(', '));
       formBody.set('timestamp', new Date().toISOString());
-      const response = await fetch(FORMSPREE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
+      const response = await fetch(SPLITFORMS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
       if (!response.ok) throw new Error('Request failed');
       setWaitlistSuccess(true); setWaitlistEmail('');
     } catch { setWaitlistError('Could not submit right now. Please try again.'); }
@@ -3281,7 +3283,7 @@ export default function App() {
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
-            <p className="text-[11px] text-gray-700">Relatch v2.1</p>
+            <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
           </div>
         </footer>
       </div>
