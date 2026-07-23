@@ -1457,6 +1457,7 @@ Audience context:
 - Care about clarity over jargon`;
 const SPLITFORMS_ENDPOINT = ((import.meta.env.VITE_SPLITFORMS_ENDPOINT as string | undefined)?.trim() || 'https://splitforms.com/api/submit');
 const SPLITFORMS_ACCESS_KEY = ((import.meta.env.VITE_SPLITFORMS_ACCESS_KEY as string | undefined)?.trim() || 'f277a53be64748cc802c0de0c130951f');
+const WAITLIST_CHECK_URL = 'https://claudly-proxy.vercel.app/api/waitlist-check';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Waitlist popup: how long after a real download click to interrupt with the join prompt.
@@ -1896,6 +1897,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
   const [waitlistEmail, setWaitlistEmail] = useState('');
   const [waitlistError, setWaitlistError] = useState<string | null>(null);
   const [waitlistSuccess, setWaitlistSuccess] = useState(false);
+  const [waitlistAlreadyJoined, setWaitlistAlreadyJoined] = useState(false);
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -1972,22 +1974,22 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
   // Waitlist popup trigger, deliberately a SEPARATE effect with its OWN ref rather than folded
   // into the video-transition effect above. That effect writes prevVideoVisibleRef.current =
   // videoVisible as its first statement, so by the time any other code reads that same ref it
-  // would already see the new value â€” a shared ref can never observe a genuine transition twice.
+  // would already see the new value -- a shared ref can never observe a genuine transition twice.
   // Only a real Download click reaches here (videoVisible, same as above; Copy never touches it).
   const prevVideoVisibleForPopupRef = useRef<boolean | null>(null);
   useEffect(() => {
     const prev = prevVideoVisibleForPopupRef.current;
     prevVideoVisibleForPopupRef.current = videoVisible;
-    if (prev === null) return; // first render in this mount â€” no transition
+    if (prev === null) return; // first render in this mount -- no transition
     if (videoVisible && !prev) {
-      if (waitlistStatus) return; // already joined or already dismissed â€” don't re-interrupt
+      if (waitlistStatus) return; // already joined or already dismissed -- don't re-interrupt
       const popupTimer = setTimeout(() => setShowWaitlistPopup(true), WAITLIST_POPUP_DELAY_MS);
       return () => clearTimeout(popupTimer);
     }
   }, [videoVisible, waitlistStatus]);
 
   // useCallback so identity stays stable across the re-renders that happen while typing into the
-  // popup's email field (waitlistEmail changes) â€” otherwise WaitlistPopup's effects, keyed on
+  // popup's email field (waitlistEmail changes) -- otherwise WaitlistPopup's effects, keyed on
   // onClose, would tear down and re-subscribe (keydown listener, scroll lock, auto-close timer)
   // on every keystroke instead of only when waitlistSuccess itself actually changes.
   const closeWaitlistPopup = useCallback(() => {
@@ -2000,7 +2002,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
 
   const LOADING_MESSAGES = [
     'Building your skill file...',
-    'Almost there â€” structuring the final sections...',
+    'Almost there - structuring the final sections...',
   ];
 
   useEffect(() => {
@@ -2460,12 +2462,32 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
   };
 
   const handleWaitlistSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setWaitlistError(null);
+    e.preventDefault(); setWaitlistError(null); setWaitlistAlreadyJoined(false);
     const email = waitlistEmail.trim();
     if (!email) { setWaitlistError('Please enter your email.'); return; }
     if (!EMAIL_REGEX.test(email)) { setWaitlistError('Please enter a valid email address.'); return; }
     try {
       setWaitlistSubmitting(true);
+      // Duplicate guardrail: check this email against existing SplitForms submissions before
+      // writing a new one. Deliberately best-effort -- any failure here (network, missing
+      // backend config) falls through to the normal submit below rather than blocking a real
+      // signup, so this can ship even before the backend's SPLITFORMS_READ_TOKEN is configured.
+      try {
+        const checkToken = _getToken ? await _getToken() : null;
+        const checkResponse = await fetch(WAITLIST_CHECK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(checkToken ? { 'Authorization': `Bearer ${checkToken}` } : {}) },
+          body: JSON.stringify({ email }),
+        });
+        if (checkResponse.ok) {
+          const { alreadyJoined } = await checkResponse.json();
+          if (alreadyJoined) {
+            persistWaitlistStatus('joined'); setWaitlistStatus('joined');
+            setWaitlistAlreadyJoined(true); setWaitlistSuccess(true); setWaitlistEmail('');
+            return;
+          }
+        }
+      } catch { /* dedup check unavailable -- proceed to submit as normal */ }
       const formBody = new URLSearchParams();
       formBody.set('access_key', SPLITFORMS_ACCESS_KEY);
       formBody.set('email', email); formBody.set('source', 'relatch-step4');
@@ -2751,6 +2773,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
           onEmailChange={setWaitlistEmail}
           error={waitlistError}
           success={waitlistSuccess}
+          alreadyJoined={waitlistAlreadyJoined}
           submitting={waitlistSubmitting}
           onSubmit={handleWaitlistSubmit}
           onClose={closeWaitlistPopup}
@@ -2936,12 +2959,13 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
   );
 }
 
-function WaitlistPopup({ target, email, onEmailChange, error, success, submitting, onSubmit, onClose }: {
+function WaitlistPopup({ target, email, onEmailChange, error, success, alreadyJoined, submitting, onSubmit, onClose }: {
   target: 'claude' | 'codex';
   email: string;
   onEmailChange: (v: string) => void;
   error: string | null;
   success: boolean;
+  alreadyJoined: boolean;
   submitting: boolean;
   onSubmit: (e: React.FormEvent) => void;
   onClose: () => void;
@@ -2969,7 +2993,7 @@ function WaitlistPopup({ target, email, onEmailChange, error, success, submittin
   }, [user]);
 
   // Timer-triggered and unprompted (unlike ConfirmAgentPopup, which appears in direct response to
-  // a click) â€” deliberately no autofocus on the input, so it doesn't feel forced.
+  // a click) -- deliberately no autofocus on the input, so it doesn't feel forced.
 
   // Give the success state a moment to register, then get out of the way on its own.
   useEffect(() => {
@@ -3008,11 +3032,13 @@ function WaitlistPopup({ target, email, onEmailChange, error, success, submittin
         </button>
         <h2 id="relatch-waitlist-title" className="text-lg font-bold text-white tracking-tight pr-6">Get early access</h2>
         <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
-          Skip the file upload entirely â€” direct {target === 'codex' ? 'Codex' : 'Claude'} integration is next. Early access members help test it first.
+          Skip the file upload entirely &mdash; direct {target === 'codex' ? 'Codex' : 'Claude'} integration is next. Early access members help test it first.
         </p>
         {success ? (
           <div className="mt-4 rounded-lg px-3 py-2.5 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">
-            You&apos;re on the list. We&apos;ll reach out first â€” feedback welcome anytime.
+            {alreadyJoined
+              ? "You're already on the list - we'll reach out when it's time."
+              : "You're on the list. We'll reach out first - feedback welcome anytime."}
           </div>
         ) : (
           <form onSubmit={onSubmit} className="mt-4 space-y-2.5">
