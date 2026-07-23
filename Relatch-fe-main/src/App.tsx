@@ -1459,6 +1459,20 @@ const SPLITFORMS_ENDPOINT = ((import.meta.env.VITE_SPLITFORMS_ENDPOINT as string
 const SPLITFORMS_ACCESS_KEY = ((import.meta.env.VITE_SPLITFORMS_ACCESS_KEY as string | undefined)?.trim() || 'f277a53be64748cc802c0de0c130951f');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Waitlist popup: how long after a real download click to interrupt with the join prompt.
+const WAITLIST_POPUP_DELAY_MS = 6000;
+const WAITLIST_STATUS_KEY = 'relatch_waitlist_status';
+type WaitlistStatus = 'joined' | 'dismissed' | null;
+
+// 'joined' vs 'dismissed' are tracked separately (not one boolean) because they answer two
+// different questions: both suppress the auto-popup, but only 'joined' hides the footer fallback link.
+function getWaitlistStatus(): WaitlistStatus {
+  try { return localStorage.getItem(WAITLIST_STATUS_KEY) as WaitlistStatus; } catch { return null; }
+}
+function persistWaitlistStatus(status: 'joined' | 'dismissed') {
+  try { localStorage.setItem(WAITLIST_STATUS_KEY, status); } catch { /* storage unavailable, non-fatal */ }
+}
+
 function toSkillSlug(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 60) || 'my-skill';
 }
@@ -1876,7 +1890,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
   );
 }
 
-function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature }: { files: UploadedFile[]; config: SkillConfig; videoSeenSignature: string | null; setVideoSeenSignature: (s: string | null) => void }) {
+function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature, waitlistStatus, setWaitlistStatus, showWaitlistPopup, setShowWaitlistPopup }: { files: UploadedFile[]; config: SkillConfig; videoSeenSignature: string | null; setVideoSeenSignature: (s: string | null) => void; waitlistStatus: WaitlistStatus; setWaitlistStatus: (s: WaitlistStatus) => void; showWaitlistPopup: boolean; setShowWaitlistPopup: (v: boolean) => void }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [activeFile, setActiveFile] = useState(0);
   const [waitlistEmail, setWaitlistEmail] = useState('');
@@ -1954,6 +1968,35 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       return () => clearTimeout(revealTimer);
     }
   }, [videoVisible]);
+
+  // Waitlist popup trigger, deliberately a SEPARATE effect with its OWN ref rather than folded
+  // into the video-transition effect above. That effect writes prevVideoVisibleRef.current =
+  // videoVisible as its first statement, so by the time any other code reads that same ref it
+  // would already see the new value â€” a shared ref can never observe a genuine transition twice.
+  // Only a real Download click reaches here (videoVisible, same as above; Copy never touches it).
+  const prevVideoVisibleForPopupRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = prevVideoVisibleForPopupRef.current;
+    prevVideoVisibleForPopupRef.current = videoVisible;
+    if (prev === null) return; // first render in this mount â€” no transition
+    if (videoVisible && !prev) {
+      if (waitlistStatus) return; // already joined or already dismissed â€” don't re-interrupt
+      const popupTimer = setTimeout(() => setShowWaitlistPopup(true), WAITLIST_POPUP_DELAY_MS);
+      return () => clearTimeout(popupTimer);
+    }
+  }, [videoVisible, waitlistStatus]);
+
+  // useCallback so identity stays stable across the re-renders that happen while typing into the
+  // popup's email field (waitlistEmail changes) â€” otherwise WaitlistPopup's effects, keyed on
+  // onClose, would tear down and re-subscribe (keydown listener, scroll lock, auto-close timer)
+  // on every keystroke instead of only when waitlistSuccess itself actually changes.
+  const closeWaitlistPopup = useCallback(() => {
+    if (!waitlistSuccess) {
+      persistWaitlistStatus('dismissed');
+      setWaitlistStatus('dismissed');
+    }
+    setShowWaitlistPopup(false);
+  }, [waitlistSuccess, setWaitlistStatus, setShowWaitlistPopup]);
 
   const LOADING_MESSAGES = [
     'Building your skill file...',
@@ -2430,6 +2473,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       formBody.set('timestamp', new Date().toISOString());
       const response = await fetch(SPLITFORMS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
       if (!response.ok) throw new Error('Request failed');
+      persistWaitlistStatus('joined'); setWaitlistStatus('joined');
       setWaitlistSuccess(true); setWaitlistEmail('');
     } catch { setWaitlistError('Could not submit right now. Please try again.'); }
     finally { setWaitlistSubmitting(false); }
@@ -2549,24 +2593,6 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         </AnimatedSection>
       )}
       {!isGenerating && generatedFiles && (<>
-      <AnimatedSection>
-        <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-          <h4 className="text-sm font-semibold text-white mb-1">This is just the beginning</h4>
-          <p className="text-[11px] text-gray-500 mb-3">{config.target === 'codex' ? 'The full Relatch app connects directly to Codex. Instant skill generation, no files. Join the waitlist for early access.' : 'The full Relatch app connects directly to Claude. No files, no drag and drop. Join the waitlist for early access.'}</p>
-          {waitlistSuccess ? (
-            <div className="rounded-lg px-3 py-2 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">You&apos;re in. We&apos;ll email you the moment early access opens.</div>
-          ) : (
-            <form onSubmit={handleWaitlistSubmit} className="space-y-2.5">
-              <div className="flex gap-2">
-                <input type="email" value={waitlistEmail} onChange={(e) => setWaitlistEmail(e.target.value)} placeholder="you@company.com" className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none" />
-                <button type="submit" disabled={waitlistSubmitting} className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${waitlistSubmitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>{waitlistSubmitting ? 'Joining...' : 'Join waitlist'}</button>
-              </div>
-              <p className="text-[11px] text-gray-500">One email when we launch. That&apos;s it.</p>
-              {waitlistError && <p className="text-[11px] text-red-300">{waitlistError}</p>}
-            </form>
-          )}
-        </div>
-      </AnimatedSection>
       <AnimatedSection>
         <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.04] to-transparent border border-blue-500/15">
           <div className="flex items-start gap-3 mb-4">
@@ -2718,6 +2744,18 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         </AnimatedSection>
       )}
       </>)}
+      {showWaitlistPopup && (
+        <WaitlistPopup
+          target={config.target}
+          email={waitlistEmail}
+          onEmailChange={setWaitlistEmail}
+          error={waitlistError}
+          success={waitlistSuccess}
+          submitting={waitlistSubmitting}
+          onSubmit={handleWaitlistSubmit}
+          onClose={closeWaitlistPopup}
+        />
+      )}
     </div>
   );
 }
@@ -2892,6 +2930,112 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
         >
           Okay
         </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function WaitlistPopup({ target, email, onEmailChange, error, success, submitting, onSubmit, onClose }: {
+  target: 'claude' | 'codex';
+  email: string;
+  onEmailChange: (v: string) => void;
+  error: string | null;
+  success: boolean;
+  submitting: boolean;
+  onSubmit: (e: React.FormEvent) => void;
+  onClose: () => void;
+}) {
+  const { user } = useUser();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  // Step 5 guarantees a signed-in Clerk session (requireAuth gates every step advance), so seed
+  // the field once from the account's own email rather than making the user type it from scratch.
+  useEffect(() => {
+    if (!email && user?.primaryEmailAddress?.emailAddress) {
+      onEmailChange(user.primaryEmailAddress.emailAddress);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Timer-triggered and unprompted (unlike ConfirmAgentPopup, which appears in direct response to
+  // a click) â€” deliberately no autofocus on the input, so it doesn't feel forced.
+
+  // Give the success state a moment to register, then get out of the way on its own.
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(onClose, 1800);
+    return () => clearTimeout(t);
+  }, [success, onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+      <div
+        className="relatch-overlay-enter absolute inset-0 bg-black/55"
+        style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="relatch-waitlist-title"
+        className="relatch-popup-enter relative w-full max-w-sm rounded-2xl border border-white/[0.08] p-7"
+        style={{
+          background: 'rgba(12,16,24,0.92)',
+          boxShadow: '0 0 40px rgba(58,123,255,0.18)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-gray-400 hover:text-white transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+        <h2 id="relatch-waitlist-title" className="text-lg font-bold text-white tracking-tight pr-6">Get early access</h2>
+        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
+          Skip the file upload entirely â€” direct {target === 'codex' ? 'Codex' : 'Claude'} integration is next. Early access members help test it first.
+        </p>
+        {success ? (
+          <div className="mt-4 rounded-lg px-3 py-2.5 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">
+            You&apos;re on the list. We&apos;ll reach out first â€” feedback welcome anytime.
+          </div>
+        ) : (
+          <form onSubmit={onSubmit} className="mt-4 space-y-2.5">
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => onEmailChange(e.target.value)}
+                placeholder="you@company.com"
+                className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none"
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${submitting ? 'bg-white/[0.04] text-gray-600 cursor-not-allowed border border-white/[0.05]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
+              >
+                {submitting ? 'Joining...' : 'Join'}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500">Occasional updates. We&apos;ll ask for feedback, not fill your inbox.</p>
+            {error && <p className="text-[11px] text-red-300">{error}</p>}
+          </form>
+        )}
       </div>
     </div>,
     document.body
@@ -3083,6 +3227,13 @@ export default function App() {
   // so going Backâ†’Forward without editing keeps the video visible. Any change to
   // skill name / notes / categories / target â†’ new signature â†’ flow resets.
   const [videoSeenSignature, setVideoSeenSignature] = useState<string | null>(null);
+  // Lifted (not local to SkillOutput) for the same reason as videoSeenSignature above: the
+  // footer's fallback waitlist link needs to read it too, and must reflect a join that happens
+  // inside SkillOutput without a reload. Seeded from localStorage so a prior visit is remembered.
+  const [waitlistStatus, setWaitlistStatus] = useState<WaitlistStatus>(() => getWaitlistStatus());
+  // Also lifted (rather than local to SkillOutput): the footer's manual "join waitlist" fallback
+  // link lives in App(), and needs to be able to open the same popup SkillOutput renders.
+  const [showWaitlistPopup, setShowWaitlistPopup] = useState(false);
   const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
   const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly'; weeklyCount: number } | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
@@ -3266,7 +3417,7 @@ export default function App() {
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
               {currentStep === 'configure' && <SkillConfigurator config={config} files={files} onUpdateConfig={setConfig} />}
-              {currentStep === 'generate' && <SkillOutput files={files} config={config} videoSeenSignature={videoSeenSignature} setVideoSeenSignature={setVideoSeenSignature} />}
+              {currentStep === 'generate' && <SkillOutput files={files} config={config} videoSeenSignature={videoSeenSignature} setVideoSeenSignature={setVideoSeenSignature} waitlistStatus={waitlistStatus} setWaitlistStatus={setWaitlistStatus} showWaitlistPopup={showWaitlistPopup} setShowWaitlistPopup={setShowWaitlistPopup} />}
             </div>
             <div className="flex items-center justify-between mt-7 pb-10">
               <button onClick={goPrev} disabled={stepIndex === 0} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all ${stepIndex === 0 ? 'opacity-0 pointer-events-none' : 'text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05]'}`}>
@@ -3283,7 +3434,18 @@ export default function App() {
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
-            <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
+            <div className="flex items-center gap-3">
+              {currentStep === 'generate' && waitlistStatus !== 'joined' && (
+                <button
+                  type="button"
+                  onClick={() => setShowWaitlistPopup(true)}
+                  className="text-[11px] text-gray-500 hover:text-blue-400 transition-colors font-medium"
+                >
+                  Join waitlist
+                </button>
+              )}
+              <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
+            </div>
           </div>
         </footer>
       </div>
