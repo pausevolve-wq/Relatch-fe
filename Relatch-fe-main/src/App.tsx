@@ -3454,24 +3454,22 @@ export default function App() {
                   {currentStep === 'configure' ? 'Generate Skill' : 'Continue'}<ArrowRight className="w-3.5 h-3.5" />
                 </button>
               )}
+              {currentStep === 'generate' && waitlistStatus !== 'joined' && (
+                <button
+                  type="button"
+                  onClick={() => setShowWaitlistPopup(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05]"
+                >
+                  Join waitlist
+                </button>
+              )}
             </div>
           </div>
         </div>
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
-            <div className="flex items-center gap-3">
-              {currentStep === 'generate' && waitlistStatus !== 'joined' && (
-                <button
-                  type="button"
-                  onClick={() => setShowWaitlistPopup(true)}
-                  className="text-[11px] text-gray-500 hover:text-blue-400 transition-colors font-medium"
-                >
-                  Join waitlist
-                </button>
-              )}
-              <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
-            </div>
+            <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
           </div>
         </footer>
       </div>
