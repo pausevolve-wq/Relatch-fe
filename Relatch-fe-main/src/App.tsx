@@ -3032,7 +3032,7 @@ function WaitlistPopup({ target, email, onEmailChange, error, success, alreadyJo
         </button>
         <h2 id="relatch-waitlist-title" className="text-lg font-bold text-white tracking-tight pr-6">Get early access</h2>
         <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
-          Skip the file upload entirely &mdash; direct {target === 'codex' ? 'Codex' : 'Claude'} integration is next. Early access members help test it first.
+          Skip the file upload entirely, direct {target === 'codex' ? 'Codex' : 'Claude'} integration is next. Early access members help test it first.
         </p>
         {success ? (
           <div className="mt-4 rounded-lg px-3 py-2.5 text-sm bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-300">
