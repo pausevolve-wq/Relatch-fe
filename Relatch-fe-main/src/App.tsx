@@ -127,8 +127,17 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.js', '.ts', '.py', '.rb', '.go', '.rs',
 ]);
 
+// Client-side upload size cap. Bounds worst-case memory use during parsing —
+// in particular JSZip's decompression of word/document.xml in extractDocxText(),
+// which has no output-size limit of its own. 20MB is generous for the actual
+// use case (extracting text for a skill file) while keeping a maliciously
+// crafted small-but-high-ratio .docx from trying to inflate to an unbounded
+// size in the browser's own memory.
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+
 function validateInputFile(file: File): FileValidationResult {
   if (!file || file.size <= 0) return { ok: false, reason: 'File is empty and cannot be processed.' };
+  if (file.size > MAX_FILE_SIZE_BYTES) return { ok: false, reason: `File too large (${formatBytes(file.size)}). Maximum size is ${formatBytes(MAX_FILE_SIZE_BYTES)}.` };
   const ext = getFileExtension(file.name);
   if (!SUPPORTED_EXTENSIONS.has(ext)) return { ok: false, reason: `Unsupported file type: ${ext}` };
   return { ok: true };
