@@ -323,7 +323,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
     warnings.push('PDF text layer empty - attempting OCR extraction.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
-      warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents.`);
+      warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents. This file was sent to a third-party OCR provider for processing — see our Privacy Policy for details.`);
       return { type: 'pdf', text: ocrResult.text, warnings };
     }
     warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
@@ -335,7 +335,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
     warnings.push('PDF appears diagram-heavy or text-sparse - attempting OCR for richer extraction.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
-      warnings.push(`Enhanced extraction via OCR (${ocrResult.source}).`);
+      warnings.push(`Enhanced extraction via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
       return { type: 'pdf', text: ocrResult.text, warnings };
     }
     warnings.push('OCR did not improve extraction — using text layer.');
@@ -383,7 +383,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     warnings.push('DOCX extraction failed - attempting OCR.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
-      warnings.push(`Text extracted via OCR (${ocrResult.source}).`);
+      warnings.push(`Text extracted via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
       return { type: 'docx', text: ocrResult.text, warnings };
     }
     return { type: 'docx', text: '', warnings };
