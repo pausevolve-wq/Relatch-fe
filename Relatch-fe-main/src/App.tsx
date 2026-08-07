@@ -28,6 +28,7 @@ interface UploadedFile {
   category: FileCategory;
   parsedAt: Date;
   extractionWarning?: string;
+  ocrBlocks?: OcrPageBlocks[];
 }
 
 interface CategoryConfig {
@@ -94,10 +95,27 @@ function estimateTokens(text: string): number {
 
 type NormalizedFileType = 'pdf' | 'docx' | 'txt' | 'html' | 'unknown';
 
+// Mirrors the `blocks` shape returned by /api/ocr (Mistral's include_blocks output) —
+// paragraph-level bounding boxes, OCR4+ only. See relatch-main/api/ocr.js.
+interface OcrBlock {
+  type: string;
+  top_left_x: number;
+  top_left_y: number;
+  bottom_right_x: number;
+  bottom_right_y: number;
+  content: string;
+}
+
+interface OcrPageBlocks {
+  page: number;
+  blocks: OcrBlock[];
+}
+
 interface ExtractedTextResult {
   type: NormalizedFileType;
   text: string;
   warnings: string[];
+  blocks?: OcrPageBlocks[];
 }
 
 interface FileValidationResult {
@@ -239,7 +257,7 @@ function extractTextFromHtml(html: string): string {
   return blocks.join('\n');
 }
 
-async function callOcrProxy(file: File): Promise<{ text: string; source: string } | null> {
+async function callOcrProxy(file: File): Promise<{ text: string; source: string; blocks?: OcrPageBlocks[] } | null> {
   try {
     const buffer = await readAsArrayBuffer(file);
     const base64 = arrayBufferToBase64(buffer);
@@ -261,7 +279,7 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string 
 
     const data = await response.json();
     if (data.text && data.text.length > 50) {
-      return { text: data.text, source: data.source };
+      return { text: data.text, source: data.source, blocks: data.blocks };
     }
 
     return null;
@@ -324,7 +342,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
       warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents. This file was sent to a third-party OCR provider for processing — see our Privacy Policy for details.`);
-      return { type: 'pdf', text: ocrResult.text, warnings };
+      return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
     return { type: 'pdf', text: '', warnings };
@@ -336,7 +354,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
     const ocrResult = await callOcrProxy(file);
     if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
       warnings.push(`Enhanced extraction via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
-      return { type: 'pdf', text: ocrResult.text, warnings };
+      return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     warnings.push('OCR did not improve extraction — using text layer.');
   }
@@ -384,7 +402,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
       warnings.push(`Text extracted via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
-      return { type: 'docx', text: ocrResult.text, warnings };
+      return { type: 'docx', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     return { type: 'docx', text: '', warnings };
   }
@@ -1432,6 +1450,7 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     category,
     parsedAt: new Date(),
     extractionWarning,
+    ocrBlocks: extracted.blocks,
   };
 }
 
