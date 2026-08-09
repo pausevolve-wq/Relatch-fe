@@ -349,7 +349,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   if (pdfjsText.length < 50) {
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
-      warnings.push(`Extracted via OCR — accuracy may vary, processed by a third party.`);
+      warnings.push(`Extracted via OCR — accuracy may vary on scans.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     // Give the real reason when it's a size mismatch - OCR silently returning null for a
@@ -367,7 +367,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   if (isPdfTextWeak(pdfjsText, numPages)) {
     const ocrResult = await callOcrProxy(file);
     if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
-      warnings.push(`Enhanced via OCR — processed by a third party.`);
+      warnings.push(`Enhanced via OCR.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     warnings.push('OCR did not improve extraction — using text layer.');
@@ -414,7 +414,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
 
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
-      warnings.push(`Extracted via OCR — processed by a third party.`);
+      warnings.push(`Extracted via OCR.`);
       return { type: 'docx', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     if (file.size > MAX_OCR_FILE_SIZE_BYTES) {
