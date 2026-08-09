@@ -2576,6 +2576,22 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     let codeAccumulator: string[] = [];
     let codeLanguage = '';
     const bodyLines: { line: string; index: number }[] = [];
+    // Shared by every line type below (headers, bullets, table cells, paragraphs) so
+    // **bold**/*italic*/`code` render consistently everywhere instead of only in plain
+    // paragraph lines. Escape HTML FIRST, then convert markdown markers - reversing this
+    // order would let raw AI-generated content inject HTML through dangerouslySetInnerHTML.
+    const formatInline = (str: string): string => {
+      let out = str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      out = out.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
+      out = out.replace(/\*(.*?)\*/g, '<em class="text-gray-400 italic">$1</em>');
+      out = out.replace(/`(.*?)`/g, '<code class="px-1 py-0.5 text-[11px] bg-white/[0.06] text-blue-300 rounded font-mono">$1</code>');
+      return out;
+    };
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (i === 0 && line.trim() === '---') { inFrontmatter = true; continue; }
@@ -2592,11 +2608,11 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
           </div>
         )}
         {bodyLines.map(({ line, index }) => {
-          if (line.startsWith('# ')) return <h1 key={index} className="text-lg font-bold text-white mt-4 mb-2">{line.replace('# ', '')}</h1>;
-          if (line.startsWith('## ')) return <h2 key={index} className="text-base font-semibold text-blue-400 mt-5 mb-1.5 pb-1.5 border-b border-white/[0.06]">{line.replace('## ', '')}</h2>;
-          if (line.startsWith('### ')) return <h3 key={index} className="text-sm font-medium text-gray-200 mt-3 mb-1">{line.replace('### ', '')}</h3>;
-          if (line.startsWith('> ')) return <blockquote key={index} className="border-l-2 border-blue-500/30 pl-3 py-0.5 text-gray-400 text-sm my-1">{line.replace('> ', '')}</blockquote>;
-          if (line.startsWith('- ') || line.startsWith('* ')) return <li key={index} className="ml-4 text-sm text-gray-300 list-disc leading-relaxed">{line.replace(/^[-*]\s/, '')}</li>;
+          if (line.startsWith('# ')) return <h1 key={index} className="text-lg font-bold text-white mt-4 mb-2" dangerouslySetInnerHTML={{ __html: formatInline(line.replace('# ', '')) }} />;
+          if (line.startsWith('## ')) return <h2 key={index} className="text-base font-semibold text-blue-400 mt-5 mb-1.5 pb-1.5 border-b border-white/[0.06]" dangerouslySetInnerHTML={{ __html: formatInline(line.replace('## ', '')) }} />;
+          if (line.startsWith('### ')) return <h3 key={index} className="text-sm font-medium text-gray-200 mt-3 mb-1" dangerouslySetInnerHTML={{ __html: formatInline(line.replace('### ', '')) }} />;
+          if (line.startsWith('> ')) return <blockquote key={index} className="border-l-2 border-blue-500/30 pl-3 py-0.5 text-gray-400 text-sm my-1" dangerouslySetInnerHTML={{ __html: formatInline(line.replace('> ', '')) }} />;
+          if (line.startsWith('- ') || line.startsWith('* ')) return <li key={index} className="ml-4 text-sm text-gray-300 list-disc leading-relaxed" dangerouslySetInnerHTML={{ __html: formatInline(line.replace(/^[-*]\s/, '')) }} />;
           if (line.startsWith('---')) return <hr key={index} className="border-white/[0.06] my-3" />;
           // Code block handling
           if (line.startsWith('```')) {
@@ -2637,9 +2653,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
                 <table className="w-full text-xs border-collapse">
                   <tr>
                     {cells.map((cell, ci) => (
-                      <td key={ci} className="px-3 py-2 border border-white/[0.08] text-gray-300 bg-white/[0.02]">
-                        {cell}
-                      </td>
+                      <td key={ci} className="px-3 py-2 border border-white/[0.08] text-gray-300 bg-white/[0.02]" dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
                     ))}
                   </tr>
                 </table>
@@ -2647,18 +2661,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
             );
           }
           if (line.trim() === '') return <div key={index} className="h-1.5" />;
-          const escapeHtml = (str: string): string =>
-            str
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&#39;');
-          let parsed = escapeHtml(line);
-          parsed = parsed.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
-          parsed = parsed.replace(/\*(.*?)\*/g, '<em class="text-gray-400 italic">$1</em>');
-          parsed = parsed.replace(/`(.*?)`/g, '<code class="px-1 py-0.5 text-[11px] bg-white/[0.06] text-blue-300 rounded font-mono">$1</code>');
-          return <p key={index} className="text-sm text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: parsed }} />;
+          return <p key={index} className="text-sm text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatInline(line) }} />;
         })}
       </div>
     );
