@@ -153,6 +153,14 @@ const SUPPORTED_EXTENSIONS = new Set([
 // size in the browser's own memory.
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 
+// Matches api/ocr.js's own ~3MB decoded-size cap (Vercel's 4.5MB request-body ceiling sits
+// just above that). Checked in callOcrProxy before the synchronous arrayBufferToBase64 encode
+// below, so a file we already know the backend will reject with 413 is rejected instantly
+// client-side instead of freezing the tab encoding megabytes of base64 first. Deliberately
+// separate from MAX_FILE_SIZE_BYTES above - most files in the 3-20MB band never need OCR at
+// all (pdfjs extracts their text layer directly), so this only gates the OCR escalation path.
+const MAX_OCR_FILE_SIZE_BYTES = 3 * 1000 * 1000;
+
 function validateInputFile(file: File): FileValidationResult {
   if (!file || file.size <= 0) return { ok: false, reason: 'File is empty and cannot be processed.' };
   if (file.size > MAX_FILE_SIZE_BYTES) return { ok: false, reason: `File too large (${formatBytes(file.size)}). Maximum size is ${formatBytes(MAX_FILE_SIZE_BYTES)}.` };
@@ -258,6 +266,7 @@ function extractTextFromHtml(html: string): string {
 }
 
 async function callOcrProxy(file: File): Promise<{ text: string; source: string; blocks?: OcrPageBlocks[] } | null> {
+  if (file.size > MAX_OCR_FILE_SIZE_BYTES) return null;
   try {
     const buffer = await readAsArrayBuffer(file);
     const base64 = arrayBufferToBase64(buffer);
@@ -344,7 +353,14 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
       warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents. This file was sent to a third-party OCR provider for processing — see our Privacy Policy for details.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
-    warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
+    // Give the real reason when it's a size mismatch - OCR silently returning null for a
+    // 413 looked identical to a genuinely corrupted/encrypted file, misleading users whose
+    // scanned PDF was simply too large for the OCR path (still well within MAX_FILE_SIZE_BYTES).
+    if (file.size > MAX_OCR_FILE_SIZE_BYTES) {
+      warnings.push(`This file (${formatBytes(file.size)}) has no extractable text layer, so it needs OCR - but OCR is only available for files up to ${formatBytes(MAX_OCR_FILE_SIZE_BYTES)}. Try a smaller or lower-resolution scan.`);
+    } else {
+      warnings.push('Both PDF text extraction and OCR failed. This document may be encrypted, corrupted, or very low resolution.');
+    }
     return { type: 'pdf', text: '', warnings };
   }
 
@@ -403,6 +419,9 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     if (ocrResult) {
       warnings.push(`Text extracted via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
       return { type: 'docx', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
+    }
+    if (file.size > MAX_OCR_FILE_SIZE_BYTES) {
+      warnings.push(`This file (${formatBytes(file.size)}) could not be parsed directly, so it needs OCR - but OCR is only available for files up to ${formatBytes(MAX_OCR_FILE_SIZE_BYTES)}. Try a smaller file.`);
     }
     return { type: 'docx', text: '', warnings };
   }
@@ -776,7 +795,7 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
     codexKeywordsExtra: /\b(copy\.?review|headline\.?audit|cta\.?test|conversion\.?review|ad\.?copy\.?check|lander\.?review|swipe\.?critique)\b/i,
   },
   api_design: {
-    codexRole: 'an API design reviewer operating within defined contract standards and versioning constraints â€" flags breaking changes and enforces error-response conventions',
+    codexRole: 'an API design reviewer operating within defined contract standards and versioning constraints - flags breaking changes and enforces error-response conventions',
     codexFrame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
     codexKeywordsExtra: /\b(restful|endpoints|crud|payload|idempotency|rest[\s.-]?api|api[\s.-]?design|http[\s.-]?method|http[\s.-]?verb|resource[\s.-]?design|resource[\s.-]?model|api[\s.-]?evolution|api[\s.-]?lifecycle|api[\s.-]?strategy|api[\s.-]?contract|api[\s.-]?versioning|hypermedia|hateoas|self[\s.-]?link|link[\s.-]?relation|api[\s.-]?style|api[\s.-]?consumer|url[\s.-]?convention)\b/i,
   },
@@ -1098,6 +1117,19 @@ function sanitizeYamlValue(val: string): string {
 }
 
 function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
+  // Matches enrich.js's own skillName derivation exactly, so a fallback file's frontmatter
+  // has the same shape a successful Gemini generation would have had. Without this, the
+  // downloaded file has no name: field at all (this function never passes through the
+  // backend's sanitize(), which is the only place that field is normally force-injected).
+  const skillNameFromFile = fileName
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ') || 'Untitled Skill';
+
   const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 8);
   const fullText = lines.join(' ');
 
@@ -1145,7 +1177,7 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
       const hasColon = l.includes(':') && l.indexOf(':') > 8;
       return hasInstruction || hasBullet || hasColon;
     })
-    .map(l => l.replace(/^[-â€¢*\d.)\s]+/, '').trim())
+    .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
     .filter(l => l.length > 15);
 
   const principleSource = [...ruleLines, ...sentences].slice(0, 10);
@@ -1205,6 +1237,7 @@ function generateFallbackSkill(rawText: string, fileName: string, category: stri
     : 'consistency, patterns, accuracy');
 
   return `---
+name: ${sanitizeYamlValue(skillNameFromFile)}
 domain: ${sanitizeYamlValue(domain)}
 content_type: behavioral skill
 use_cases: [${sanitizedUseCases}]
@@ -1285,9 +1318,18 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     return { content: `---\nname: ${s}\ndescription: "${desc}"\n---\n\n## When to Activate\n### Must Use\n- Retry generation with a cleaner source document\n### Recommended\n- Review source document for sufficient signal\n### Skip\n- Using this artifact as-is without regenerating\n\n## Key Principles\n- This artifact was not generated successfully - regenerate before use.`, degraded: true };
   };
 
+  // Fix: every Claude-path failure branch below used to return generateFallbackSkill(...) as
+  // a bare string, so parseFile's isDegraded check (which only recognizes the {content,
+  // degraded} object shape, same as codexErrorStub above) never fired for Claude - only for
+  // Codex. Claude is the default target, so every Claude-path failure (422, non-2xx, missing
+  // data.enriched, network throw) was shipping a silent, unwarned fallback file with no
+  // indication to the user that AI enrichment never ran.
+  const claudeFallback = (): { content: string; degraded: true } =>
+    ({ content: generateFallbackSkill(rawText || '', fileName, category), degraded: true });
+
   if (!rawText || rawText.trim().length < 20) {
     if (target === 'codex') return codexErrorStub('Insufficient source content. Provide a longer document and regenerate.');
-    return generateFallbackSkill(rawText || '', fileName, category);
+    return claudeFallback();
   }
 
   try {
@@ -1340,7 +1382,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     if (response.status === 422) {
       if (target === 'codex') return codexErrorStub('Source content did not contain enough operational signal. Provide a richer document and regenerate.');
-      return generateFallbackSkill(rawText, fileName, category);
+      return claudeFallback();
     }
 
     if (response.status === 429) {
@@ -1354,13 +1396,13 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     if (!response.ok) {
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
-      return generateFallbackSkill(rawText, fileName, category);
+      return claudeFallback();
     }
 
     const data = await response.json();
     if (!data.enriched) {
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
-      return generateFallbackSkill(rawText, fileName, category);
+      return claudeFallback();
     }
 
     // v2.4: When the backend used the deterministic fallback assembler, surface a degraded
@@ -1375,7 +1417,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     // Quota errors must bubble up to handleFiles — do not swallow them here.
     if ((err as any)?.isQuotaError) throw err;
     if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
-    return generateFallbackSkill(rawText, fileName, category);
+    return claudeFallback();
   }
 }
 
@@ -1990,7 +2032,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
         videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
       // Phase 2: trigger the reveal animation only after scroll has settled.
-      // smooth-scroll takes ~400â€“600ms; 520ms gives a reliable post-scroll window.
+      // smooth-scroll takes ~400-600ms; 520ms gives a reliable post-scroll window.
       const revealTimer = setTimeout(() => {
         const el = videoSectionRef.current;
         if (el) el.setAttribute('data-reveal', 'true');
