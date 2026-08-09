@@ -347,10 +347,9 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   }
 
   if (pdfjsText.length < 50) {
-    warnings.push('PDF text layer empty - attempting OCR extraction.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
-      warnings.push(`Text extracted via OCR (${ocrResult.source}). Quality may vary for handwritten or low-resolution documents. This file was sent to a third-party OCR provider for processing — see our Privacy Policy for details.`);
+      warnings.push(`Extracted via OCR — accuracy may vary, processed by a third party.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     // Give the real reason when it's a size mismatch - OCR silently returning null for a
@@ -366,10 +365,9 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
 
   // Confidence heuristic: escalate to OCR for diagram-heavy / text-sparse PDFs
   if (isPdfTextWeak(pdfjsText, numPages)) {
-    warnings.push('PDF appears diagram-heavy or text-sparse - attempting OCR for richer extraction.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
-      warnings.push(`Enhanced extraction via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
+      warnings.push(`Enhanced via OCR — processed by a third party.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     warnings.push('OCR did not improve extraction — using text layer.');
@@ -414,10 +412,9 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     } catch {
     }
 
-    warnings.push('DOCX extraction failed - attempting OCR.');
     const ocrResult = await callOcrProxy(file);
     if (ocrResult) {
-      warnings.push(`Text extracted via OCR (${ocrResult.source}). This file was sent to a third-party OCR provider for processing.`);
+      warnings.push(`Extracted via OCR — processed by a third party.`);
       return { type: 'docx', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
     }
     if (file.size > MAX_OCR_FILE_SIZE_BYTES) {
