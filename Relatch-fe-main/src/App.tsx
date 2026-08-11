@@ -3066,35 +3066,69 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
 function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
   const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
   const { signIn } = useSignIn();
+  const signInContainerRef = useRef<HTMLDivElement>(null);
+
+  // Normalize Clerk strategy to method: google | github | email
+  function getMethod(): string {
+    const strategy = signIn?.supportedFirstFactors?.[0]?.strategy;
+    if (strategy === 'oauth_google') return 'google';
+    if (strategy === 'oauth_github') return 'github';
+    return strategy ? 'email' : 'unknown';
+  }
 
   useEffect(() => {
     // Fire sign-in / sign-up opened event
     captureEvent(initialView === 'sign-in' ? 'clerk_signin_opened' : 'clerk_signup_opened', {
+      method: 'unknown',
       user_agent: navigator.userAgent,
       referrer: document.referrer || undefined,
     });
+  }, [initialView]);
+
+  // Detect OAuth button clicks via DOM delegation (Clerk redirects before signIn.status changes)
+  useEffect(() => {
+    if (initialView !== 'sign-in' || !signInContainerRef.current) return;
+    const container = signInContainerRef.current;
+    const handleOAuthClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const button = target.closest('[data-provider]');
+      if (button) {
+        const provider = button.getAttribute('data-provider');
+        const method = provider === 'google' ? 'google' : provider === 'github' ? 'github' : 'email';
+        captureEvent('clerk_signin_attempted', {
+          method,
+          user_agent: navigator.userAgent,
+          referrer: document.referrer || undefined,
+        });
+      }
+    };
+    container.addEventListener('click', handleOAuthClick);
+    return () => container.removeEventListener('click', handleOAuthClick);
   }, [initialView]);
 
   // Track sign-in attempts and failures via Clerk's signIn state
   useEffect(() => {
     if (!signIn || initialView !== 'sign-in') return;
     if (signIn.status === 'needs_factor_one' || signIn.status === 'needs_factor_two') {
-      // User submitted credentials — they attempted to sign in
+      // User submitted credentials — they attempted to sign in (email/password flow)
       captureEvent('clerk_signin_attempted', {
-        method: signIn.supportedFirstFactors?.[0]?.strategy || 'email',
+        method: getMethod(),
         user_agent: navigator.userAgent,
         referrer: document.referrer || undefined,
       });
     }
     if (signIn.status === 'abandoned' || signIn.error) {
       captureEvent('clerk_signin_failed', {
-        error: signIn.error?.message || 'unknown',
+        error_message: signIn.error?.message || 'unknown',
+        method: getMethod(),
         status: signIn.status,
         user_agent: navigator.userAgent,
         referrer: document.referrer || undefined,
       });
     }
   }, [signIn?.status, signIn?.error, initialView]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -3130,7 +3164,7 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
         {view === 'sign-up' ? (
           <SignUp routing="hash" />
         ) : (
-          <SignIn routing="hash" />
+          <div ref={signInContainerRef}><SignIn routing="hash" /></div>
         )}
         <button
           type="button"
