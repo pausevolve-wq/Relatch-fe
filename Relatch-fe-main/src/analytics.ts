@@ -96,3 +96,27 @@ gtag('config', 'G-3S6Z146BBL');
     maskInputOptions: { password: true },
   },
 });
+
+// ─── PostHog event helper exports ────────────────────────────────────────────
+// Used by App.tsx for custom event tracking (sign-in funnel, product events).
+export function captureEvent(event: string, properties?: Record<string, unknown>) {
+  try {
+    const ph = (window as any).posthog;
+    if (ph && typeof ph.capture === 'function') {
+      ph.capture(event, properties);
+    }
+  } catch {
+    // fail silently
+  }
+}
+
+export function identifyUser(distinctId: string, properties?: Record<string, unknown>) {
+  try {
+    const ph = (window as any).posthog;
+    if (ph && typeof ph.identify === 'function') {
+      ph.identify(distinctId, properties);
+    }
+  } catch {
+    // fail silently
+  }
+}

@@ -8,8 +8,9 @@ import {
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
   Tag
 } from 'lucide-react';
-import { Show, SignIn, SignUp, UserButton, useUser, useAuth } from "@clerk/react";
+import { Show, SignIn, SignUp, UserButton, useUser, useAuth, useSignIn } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
+import { captureEvent, identifyUser } from "./analytics";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -252,6 +253,11 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string 
 
     const data = await response.json();
     if (data.text && data.text.length > 50) {
+      captureEvent('ocr_used', {
+        provider: data.source || 'unknown',
+        file_name: file.name,
+        file_type: mimeType,
+      });
       return { text: data.text, source: data.source };
     }
 
@@ -1559,7 +1565,18 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
         }
       }
     });
-    if (parsed.length > 0) onFilesAdded(parsed);
+    if (parsed.length > 0) {
+      onFilesAdded(parsed);
+      // Fire file_uploaded event per file
+      parsed.forEach(f => {
+        captureEvent('file_uploaded', {
+          file_type: f.type,
+          file_name: f.name,
+          file_size_mb: Math.round((f.size || 0) / (1024 * 1024) * 100) / 100,
+          category: f.category,
+        });
+      });
+    }
     if (errors.length > 0) setError(errors.join(' | '));
     if (quotaInfo) onQuotaReached(quotaInfo);
     setIsProcessing(false);
@@ -1969,6 +1986,15 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     let cancelled = false;
     async function generate() {
       setIsGenerating(true); setGenerationError(null); setLoadingMsgIndex(0);
+      const startTime = Date.now();
+      // Fire skill_generation_started
+      captureEvent('skill_generation_started', {
+        target: config.target,
+        skill_name: config.skillName,
+        file_count: files.length,
+        categories_used: Object.entries(config.categories).filter(([, c]) => c.enabled).map(([k]) => k).join(','),
+        custom_notes_length: (config.customNotes || '').length,
+      });
       try {
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
@@ -2124,9 +2150,32 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
               codexMeta,
             };
           });
-        if (!cancelled) setGeneratedFiles(results);
+        if (!cancelled) {
+          setGeneratedFiles(results);
+          const latencyMs = Date.now() - startTime;
+          captureEvent('skill_generation_completed', {
+            target: config.target,
+            skill_name: config.skillName,
+            file_count: results.length,
+            latency_ms: latencyMs,
+            total_tokens: results.reduce((s: number, r: GeneratedSkill) => s + (r.tokenEstimate || 0), 0),
+            template_used: files.map(f => {
+              const p = profileDocument(new File([], f.name), f.content || '');
+              return (p as any).template || 'A';
+            }).filter((v, i, a) => a.indexOf(v) === i).join(','),
+          });
+        }
       } catch (err) {
-        if (!cancelled) setGenerationError(err instanceof Error ? err.message : 'Generation failed');
+        if (!cancelled) {
+          setGenerationError(err instanceof Error ? err.message : 'Generation failed');
+          const latencyMs = Date.now() - startTime;
+          captureEvent('skill_generation_failed', {
+            target: config.target,
+            skill_name: config.skillName,
+            error_code: err instanceof Error ? err.message : 'unknown',
+            latency_ms: latencyMs,
+          });
+        }
       } finally {
         if (!cancelled) setIsGenerating(false);
       }
@@ -3016,8 +3065,36 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
 
 function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
   const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
+  const { signIn } = useSignIn();
 
   useEffect(() => {
+    // Fire sign-in / sign-up opened event
+    captureEvent(initialView === 'sign-in' ? 'clerk_signin_opened' : 'clerk_signup_opened', {
+      user_agent: navigator.userAgent,
+      referrer: document.referrer || undefined,
+    });
+  }, [initialView]);
+
+  // Track sign-in attempts and failures via Clerk's signIn state
+  useEffect(() => {
+    if (!signIn || initialView !== 'sign-in') return;
+    if (signIn.status === 'needs_factor_one' || signIn.status === 'needs_factor_two') {
+      // User submitted credentials — they attempted to sign in
+      captureEvent('clerk_signin_attempted', {
+        method: signIn.supportedFirstFactors?.[0]?.strategy || 'email',
+        user_agent: navigator.userAgent,
+        referrer: document.referrer || undefined,
+      });
+    }
+    if (signIn.status === 'abandoned' || signIn.error) {
+      captureEvent('clerk_signin_failed', {
+        error: signIn.error?.message || 'unknown',
+        status: signIn.status,
+        user_agent: navigator.userAgent,
+        referrer: document.referrer || undefined,
+      });
+    }
+  }, [signIn?.status, signIn?.error, initialView]);
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
@@ -3085,6 +3162,9 @@ export default function App() {
   const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly'; weeklyCount: number } | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const quotaReached = quotaInfo !== null;
+  // Track previous isSignedIn value to detect sign-in transition
+  const prevSignedInRef = useRef<boolean | null>(null);
+  useEffect(() => { prevSignedInRef.current = isSignedIn; }, [isSignedIn]);
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
   const canGoNext =
@@ -3109,7 +3189,28 @@ export default function App() {
     setShowQuotaModal(true);
   }, []);
 
-  useEffect(() => { if (isSignedIn) setAuthGateView(null); }, [isSignedIn]);
+  // Clerk → PostHog identify + sign-in funnel success event
+  useEffect(() => {
+    if (isSignedIn && user) {
+      // Identify user in PostHog (Fix 1)
+      identifyUser(user.id, {
+        email: user.primaryEmailAddress?.emailAddress,
+        name: user.fullName,
+        username: user.username,
+        clerk_created_at: user.createdAt?.toISOString(),
+      });
+      // Fire sign-in success only on transition (Fix 2)
+      if (prevSignedInRef.current === false) {
+        captureEvent('clerk_signin_success', {
+          method: user.externalAccounts?.[0]?.provider || 'email',
+          user_agent: navigator.userAgent,
+          referrer: document.referrer || undefined,
+        });
+      }
+    }
+    // Close auth gate on sign-in
+    if (isSignedIn) setAuthGateView(null);
+  }, [isSignedIn, user]);
 
   const requireAuth = useCallback((action: () => void) => {
     if (!isLoaded) return;
