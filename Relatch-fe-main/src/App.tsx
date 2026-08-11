@@ -3145,7 +3145,7 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
 }
 
 export default function App() {
-  const { isLoaded, isSignedIn } = useUser();
+  const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   useEffect(() => { _getToken = getToken; }, [getToken]);
 
