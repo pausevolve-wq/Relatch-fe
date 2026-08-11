@@ -96,3 +96,26 @@ gtag('config', 'G-3S6Z146BBL');
     maskInputOptions: { password: true },
   },
 });
+
+// ─── App-level event tracking helpers ─────────────────────────────────────
+// posthog.init() above stubs identify/capture synchronously (the snippet queues
+// calls until the real script loads), so these are safe to call immediately
+// after this module has run, without waiting for the async PostHog script.
+declare global {
+  interface Window {
+    posthog?: {
+      identify: (distinctId: string, properties?: Record<string, unknown>) => void;
+      capture: (event: string, properties?: Record<string, unknown>) => void;
+    };
+  }
+}
+
+export function identifyUser(distinctId: string, properties?: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.posthog) return;
+  window.posthog.identify(distinctId, properties);
+}
+
+export function captureEvent(name: string, properties?: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.posthog) return;
+  window.posthog.capture(name, properties);
+}
