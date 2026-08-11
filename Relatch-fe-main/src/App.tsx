@@ -29,6 +29,8 @@ interface UploadedFile {
   category: FileCategory;
   parsedAt: Date;
   extractionWarning?: string;
+  /** Model identifier used by the enrich backend, if available. */
+  modelUsed?: string;
 }
 
 interface CategoryConfig {
@@ -1255,18 +1257,18 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<string | { content: string; degraded: boolean }> {
-  // v2.4: shared Codex error stub â€” used at every point where Claude would fall through
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<{ content: string; degraded?: boolean; modelUsed?: string }> {
+  // v2.4: shared Codex error stub — used at every point where Claude would fall through
   // to generateFallbackSkill(). Returns { content, degraded: true } so parseFile surfaces
   // the degraded warning. Structurally valid for Codex CLI; not enriched content.
   const codexErrorStub = (desc: string): { content: string; degraded: true } => {
     const s = fileName.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'my-skill';
-    return { content: `---\nname: ${s}\ndescription: "${desc}"\n---\n\n## When to Activate\n### Must Use\n- Retry generation with a cleaner source document\n### Recommended\n- Review source document for sufficient signal\n### Skip\n- Using this artifact as-is without regenerating\n\n## Key Principles\n- This artifact was not generated successfully â€” regenerate before use.`, degraded: true };
+    return { content: `---\nname: ${s}\ndescription: "${desc}"\n---\n\n## When to Activate\n### Must Use\n- Retry generation with a cleaner source document\n### Recommended\n- Review source document for sufficient signal\n### Skip\n- Using this artifact as-is without regenerating\n\n## Key Principles\n- This artifact was not generated successfully — regenerate before use.`, degraded: true };
   };
 
   if (!rawText || rawText.trim().length < 20) {
     if (target === 'codex') return codexErrorStub('Insufficient source content. Provide a longer document and regenerate.');
-    return generateFallbackSkill(rawText || '', fileName, category);
+    return { content: generateFallbackSkill(rawText || '', fileName, category) };
   }
 
   try {
@@ -1319,7 +1321,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     if (response.status === 422) {
       if (target === 'codex') return codexErrorStub('Source content did not contain enough operational signal. Provide a richer document and regenerate.');
-      return generateFallbackSkill(rawText, fileName, category);
+      return { content: generateFallbackSkill(rawText, fileName, category) };
     }
 
     if (response.status === 429) {
@@ -1333,28 +1335,28 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     if (!response.ok) {
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
-      return generateFallbackSkill(rawText, fileName, category);
+      return { content: generateFallbackSkill(rawText, fileName, category) };
     }
 
     const data = await response.json();
     if (!data.enriched) {
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
-      return generateFallbackSkill(rawText, fileName, category);
+      return { content: generateFallbackSkill(rawText, fileName, category) };
     }
 
     // v2.4: When the backend used the deterministic fallback assembler, surface a degraded
     // signal to parseFile so it can attach a warning to the file card.
-    // The artifact itself is structurally valid and renderable â€” this only adds a notice.
+    // The artifact itself is structurally valid and renderable — this only adds a notice.
     if (data.model === 'deterministic-fallback' && target === 'codex') {
-      return { content: fixAiYamlFrontmatter(data.enriched), degraded: true };
+      return { content: fixAiYamlFrontmatter(data.enriched), degraded: true, modelUsed: data.model };
     }
 
-    return fixAiYamlFrontmatter(data.enriched);
+    return { content: fixAiYamlFrontmatter(data.enriched), modelUsed: data.model };
   } catch (err) {
     // Quota errors must bubble up to handleFiles — do not swallow them here.
     if ((err as any)?.isQuotaError) throw err;
     if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
-    return generateFallbackSkill(rawText, fileName, category);
+    return { content: generateFallbackSkill(rawText, fileName, category) };
   }
 }
 
@@ -1396,9 +1398,9 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
       ? sampleLargeDocument(extracted.text, profile.charCap)
       : extracted.text;
 
-  // v2.4: enrichWithAI returns string on success or { content, degraded: true } when the
-  // backend used the deterministic Codex fallback assembler. Unpack here â€” content is always
-  // a string, degraded flag triggers a user-visible warning on the file card.
+  // v2.4: enrichWithAI returns { content, degraded?, modelUsed? }.
+  // Unpack here — content is always present, degraded flag triggers a
+  // user-visible warning on the file card.
   const enrichResult = await enrichWithAI(
     textForEnrichment,
     category,
@@ -1410,14 +1412,15 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     target,
     sessionId
   );
-  const content = typeof enrichResult === 'string' ? enrichResult : (enrichResult as any).content;
-  const isDegraded = typeof enrichResult !== 'string' && (enrichResult as any).degraded === true;
+  const content = enrichResult.content;
+  const isDegraded = enrichResult.degraded === true;
+  const modelUsed = enrichResult.modelUsed;
   if (target === 'codex') {
-    console.log('[Codex]', { file: file.name, sizeClass: profile.sizeClass, distilledLen: textForEnrichment.length, rawLen: extracted.text.length, degraded: isDegraded });
+    console.log('[Codex]', { file: file.name, sizeClass: profile.sizeClass, distilledLen: textForEnrichment.length, rawLen: extracted.text.length, degraded: isDegraded, model: modelUsed });
   }
   const extractionWarning = [
     ...(extracted.warnings.length ? [extracted.warnings.join(' ')] : []),
-    ...(isDegraded ? ['Enrichment service was temporarily unavailable. This skill was assembled from your source using local signal extraction â€” review and refine before deploying.'] : []),
+    ...(isDegraded ? ['Enrichment service was temporarily unavailable. This skill was assembled from your source using local signal extraction — review and refine before deploying.'] : []),
   ].join(' ') || undefined;
 
   return {
@@ -1429,6 +1432,7 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     category,
     parsedAt: new Date(),
     extractionWarning,
+    modelUsed,
   };
 }
 
@@ -2153,6 +2157,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         if (!cancelled) {
           setGeneratedFiles(results);
           const latencyMs = Date.now() - startTime;
+          const modelsUsed = [...new Set(files.map(f => f.modelUsed).filter(Boolean))] as string[];
           captureEvent('skill_generation_completed', {
             target: config.target,
             skill_name: config.skillName,
@@ -2163,6 +2168,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
               const p = profileDocument(new File([], f.name), f.content || '');
               return (p as any).template || 'A';
             }).filter((v, i, a) => a.indexOf(v) === i).join(','),
+            model_used: modelsUsed.join(',') || undefined,
           });
         }
       } catch (err) {
