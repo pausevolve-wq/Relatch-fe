@@ -8,8 +8,9 @@ import {
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
   Tag
 } from 'lucide-react';
-import { Show, SignIn, SignUp, UserButton, useUser, useAuth } from "@clerk/react";
+import { Show, SignIn, SignUp, UserButton, useUser, useAuth, useSignIn } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
+import { identifyUser, captureEvent } from "./analytics";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -288,6 +289,7 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string;
 
     const data = await response.json();
     if (data.text && data.text.length > 50) {
+      captureEvent('ocr_used', { provider: data.source });
       return { text: data.text, source: data.source, blocks: data.blocks };
     }
 
@@ -1329,6 +1331,9 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     return claudeFallback();
   }
 
+  const genStartedAt = Date.now();
+  captureEvent('skill_generation_started', { template_used: template, target });
+
   try {
     // v2.3: pass target to detectSkillDomain so Codex path searches CODEX_NATIVE_DOMAINS too.
     // profileDocument and generateFallbackSkill still call detectSkillDomain without target
@@ -1378,11 +1383,13 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     });
 
     if (response.status === 422) {
+      captureEvent('skill_generation_failed', { error_code: '422', latency_ms: Date.now() - genStartedAt });
       if (target === 'codex') return codexErrorStub('Source content did not contain enough operational signal. Provide a richer document and regenerate.');
       return claudeFallback();
     }
 
     if (response.status === 429) {
+      captureEvent('skill_generation_failed', { error_code: '429', latency_ms: Date.now() - genStartedAt });
       const errData = await response.json().catch(() => ({}));
       const quotaErr = new Error('QUOTA_REACHED');
       (quotaErr as any).isQuotaError = true;
@@ -1392,12 +1399,14 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     }
 
     if (!response.ok) {
+      captureEvent('skill_generation_failed', { error_code: String(response.status), latency_ms: Date.now() - genStartedAt });
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
       return claudeFallback();
     }
 
     const data = await response.json();
     if (!data.enriched) {
+      captureEvent('skill_generation_failed', { error_code: 'no_enriched_content', latency_ms: Date.now() - genStartedAt });
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
       return claudeFallback();
     }
@@ -1405,6 +1414,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     // v2.4: When the backend used the deterministic fallback assembler, surface a degraded
     // signal to parseFile so it can attach a warning to the file card.
     // The artifact itself is structurally valid and renderable - this only adds a notice.
+    captureEvent('skill_generation_completed', { template_used: template, model_used: data.model, latency_ms: Date.now() - genStartedAt });
     if (data.model === 'deterministic-fallback' && target === 'codex') {
       return { content: fixAiYamlFrontmatter(data.enriched), degraded: true };
     }
@@ -1413,6 +1423,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
   } catch (err) {
     // Quota errors must bubble up to handleFiles — do not swallow them here.
     if ((err as any)?.isQuotaError) throw err;
+    captureEvent('skill_generation_failed', { error_code: 'network_error', latency_ms: Date.now() - genStartedAt });
     if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
     return claudeFallback();
   }
@@ -1642,7 +1653,10 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
         }
       }
     });
-    if (parsed.length > 0) onFilesAdded(parsed);
+    if (parsed.length > 0) {
+      onFilesAdded(parsed);
+      parsed.forEach(pf => captureEvent('file_uploaded', { file_type: pf.type, file_size_mb: +(pf.size / (1024 * 1024)).toFixed(2) }));
+    }
     if (errors.length > 0) setError(errors.join(' | '));
     if (quotaInfo) onQuotaReached(quotaInfo);
     setIsProcessing(false);
@@ -3259,6 +3273,29 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
 function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
   const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
 
+  // Read-only observation of Clerk's own sign-in resource for analytics — never drives
+  // the actual auth UI, which stays owned entirely by the pre-built <SignIn>/<SignUp>
+  // components below. Does not touch Clerk init/config.
+  const { errors: signInErrors, fetchStatus: signInFetchStatus } = useSignIn();
+  const prevSignInFetchStatus = useRef(signInFetchStatus);
+
+  useEffect(() => {
+    if (view === 'sign-in') captureEvent('clerk_signin_opened');
+  }, [view]);
+
+  useEffect(() => {
+    if (view === 'sign-in' && signInFetchStatus === 'fetching' && prevSignInFetchStatus.current !== 'fetching') {
+      captureEvent('clerk_signin_attempted', { user_agent: navigator.userAgent, referrer: document.referrer });
+    }
+    prevSignInFetchStatus.current = signInFetchStatus;
+  }, [signInFetchStatus, view]);
+
+  useEffect(() => {
+    if (view === 'sign-in' && signInErrors.global && signInErrors.global.length > 0) {
+      captureEvent('clerk_signin_failed', { error: signInErrors.global[0]?.message || signInErrors.global[0]?.code || 'unknown' });
+    }
+  }, [signInErrors, view]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -3310,7 +3347,7 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
 }
 
 export default function App() {
-  const { isLoaded, isSignedIn } = useUser();
+  const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   useEffect(() => { _getToken = getToken; }, [getToken]);
 
@@ -3359,6 +3396,29 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (isSignedIn) setAuthGateView(null); }, [isSignedIn]);
+
+  // Clerk -> PostHog identify wiring. prevSignedIn distinguishes a real sign-in transition
+  // (false -> true) from an already-authenticated page load, so clerk_signin_success only
+  // fires on an actual sign-in action, not every visit from a returning session.
+  const prevSignedIn = useRef(isSignedIn);
+  useEffect(() => {
+    if (isSignedIn && user) {
+      identifyUser(user.id, {
+        email: user.primaryEmailAddress?.emailAddress,
+        name: user.fullName,
+        username: user.username,
+        clerk_created_at: user.createdAt,
+      });
+      if (prevSignedIn.current === false) {
+        captureEvent('clerk_signin_success', {
+          method: user.externalAccounts?.[0]?.provider?.replace('oauth_', '') || 'email',
+          user_agent: navigator.userAgent,
+          referrer: document.referrer,
+        });
+      }
+    }
+    prevSignedIn.current = isSignedIn;
+  }, [isSignedIn, user]);
 
   const requireAuth = useCallback((action: () => void) => {
     if (!isLoaded) return;
