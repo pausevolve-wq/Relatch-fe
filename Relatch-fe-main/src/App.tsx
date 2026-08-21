@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import * as pdfjsLib from "pdfjs-dist";
 import {
   Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
   ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
@@ -11,8 +10,6 @@ import {
 import { Show, SignIn, SignUp, UserButton, useUser, useAuth, useSignIn } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
 import { captureEvent, identifyUser } from "./analytics";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 let _getToken: (() => Promise<string | null>) | null = null;
 
@@ -259,7 +256,7 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string 
         provider: data.source || 'unknown',
         file_name: file.name,
         file_type: mimeType,
-      });
+      }, sessionId || undefined);
       return { text: data.text, source: data.source };
     }
 
@@ -298,6 +295,8 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   let numPages = 1;
 
   try {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
     const buffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
     numPages = pdf.numPages;
@@ -1516,7 +1515,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked, onLockedClick }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean; onLockedClick: () => void }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked, onLockedClick, sessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean; onLockedClick: () => void; sessionId?: string }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1578,7 +1577,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
           file_name: f.name,
           file_size_mb: Math.round((f.size || 0) / (1024 * 1024) * 100) / 100,
           category: f.category,
-        });
+        }, sessionId);
       });
     }
     if (errors.length > 0) setError(errors.join(' | '));
@@ -1998,7 +1997,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
         file_count: files.length,
         categories_used: Object.entries(config.categories).filter(([, c]) => c.enabled).map(([k]) => k).join(','),
         custom_notes_length: (config.customNotes || '').length,
-      });
+      }, sessionId || undefined);
       try {
         const slug = toSkillSlug(config.skillName);
         const results: GeneratedSkill[] = files
@@ -2169,7 +2168,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
               return (p as any).template || 'A';
             }).filter((v, i, a) => a.indexOf(v) === i).join(','),
             model_used: modelsUsed.join(',') || undefined,
-          });
+          }, sessionId || undefined);
         }
       } catch (err) {
         if (!cancelled) {
@@ -2180,7 +2179,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
             skill_name: config.skillName,
             error_code: err instanceof Error ? err.message : 'unknown',
             latency_ms: latencyMs,
-          });
+          }, sessionId || undefined);
         }
       } finally {
         if (!cancelled) setIsGenerating(false);
@@ -2206,6 +2205,13 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     const blob = new Blob([skill.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = skill.filename; a.click(); URL.revokeObjectURL(url);
+    // Fire skill_downloaded event for funnel tracking
+    captureEvent('skill_downloaded', {
+      target: config.target,
+      skill_name: config.skillName,
+      file_name: skill.filename,
+      file_count: 1,
+    }, sessionId || undefined);
   };
 
   const handleDownloadAll = async () => {
@@ -2234,6 +2240,13 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${slug}.zip`; a.click(); URL.revokeObjectURL(url);
+    // Fire skill_downloaded event for funnel tracking
+    captureEvent('skill_downloaded', {
+      target: config.target,
+      skill_name: config.skillName,
+      file_name: `${slug}.zip`,
+      file_count: generatedFiles.length,
+    }, sessionId || undefined);
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
 
@@ -2436,6 +2449,13 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
       URL.revokeObjectURL(url);
+      // Fire skill_downloaded event for funnel tracking
+      captureEvent('skill_downloaded', {
+        target: config.target,
+        skill_name: config.skillName,
+        file_name: `${codexSlug}-codex-skill.zip`,
+        file_count: 1,
+      }, sessionId || undefined);
     } else {
       const failedFiles: string[] = [];
       let hasValid = false;
@@ -2466,6 +2486,13 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skills.zip`; a.click();
       URL.revokeObjectURL(url);
+      // Fire skill_downloaded event for funnel tracking
+      captureEvent('skill_downloaded', {
+        target: config.target,
+        skill_name: config.skillName,
+        file_name: `${codexSlug}-codex-skills.zip`,
+        file_count: generatedFiles.length - failedFiles.length,
+      }, sessionId || undefined);
     }
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
@@ -2478,12 +2505,20 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature 
     try {
       setWaitlistSubmitting(true);
       const formBody = new URLSearchParams();
-      formBody.set('email', email); formBody.set('source', 'relatch-step4');
+      formBody.set('email', email); 
+      formBody.set('source', isSignedIn ? 'post-generation-auth' : 'post-generation-guest');
+      if (sessionId) formBody.set('session_id', sessionId);
       formBody.set('generatedFiles', (generatedFiles || []).map((file) => file.filename).join(', '));
       formBody.set('timestamp', new Date().toISOString());
       const response = await fetch(FORMSPREE_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
       if (!response.ok) throw new Error('Request failed');
       setWaitlistSuccess(true); setWaitlistEmail('');
+      // Fire waitlist_submit event for funnel tracking
+      captureEvent('waitlist_submit', {
+        source: isSignedIn ? 'post-generation-auth' : 'post-generation-guest',
+        target: config.target,
+        skill_name: config.skillName,
+      }, sessionId || undefined);
     } catch { setWaitlistError('Could not submit right now. Please try again.'); }
     finally { setWaitlistSubmitting(false); }
   };
@@ -3069,7 +3104,7 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
   );
 }
 
-function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
+function AuthGate({ initialView, onClose, sessionId }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void; sessionId?: string }) {
   const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
   const { signIn } = useSignIn();
   const signInContainerRef = useRef<HTMLDivElement>(null);
@@ -3088,8 +3123,8 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
       method: 'unknown',
       user_agent: navigator.userAgent,
       referrer: document.referrer || undefined,
-    });
-  }, [initialView]);
+    }, sessionId);
+  }, [initialView, sessionId]);
 
   // Detect OAuth button clicks via DOM delegation (Clerk redirects before signIn.status changes)
   useEffect(() => {
@@ -3105,12 +3140,12 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
           method,
           user_agent: navigator.userAgent,
           referrer: document.referrer || undefined,
-        });
+        }, sessionId);
       }
     };
     container.addEventListener('click', handleOAuthClick);
     return () => container.removeEventListener('click', handleOAuthClick);
-  }, [initialView]);
+  }, [initialView, sessionId]);
 
   // Track sign-in attempts and failures via Clerk's signIn state
   useEffect(() => {
@@ -3121,7 +3156,7 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
         method: getMethod(),
         user_agent: navigator.userAgent,
         referrer: document.referrer || undefined,
-      });
+      }, sessionId);
     }
     if (signIn.status === 'abandoned' || signIn.error) {
       captureEvent('clerk_signin_failed', {
@@ -3130,9 +3165,9 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
         status: signIn.status,
         user_agent: navigator.userAgent,
         referrer: document.referrer || undefined,
-      });
+      }, sessionId);
     }
-  }, [signIn?.status, signIn?.error, initialView]);
+  }, [signIn?.status, signIn?.error, initialView, sessionId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -3202,6 +3237,23 @@ export default function App() {
   const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly'; weeklyCount: number } | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const quotaReached = quotaInfo !== null;
+  // Session ID for funnel tracking (landing → app → backend)
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSid = urlParams.get('sid');
+    const storedSid = localStorage.getItem('rl_session_id');
+    const sid = urlSid || storedSid || null;
+    if (sid) {
+      setSessionId(sid);
+      localStorage.setItem('rl_session_id', sid); // overwrite landing's copy, ensures continuity if user bookmarks app directly
+      // Fire app_mount event with session_id for funnel tracking
+      captureEvent('app_mount', {
+        has_files: files.length > 0,
+        is_signed_in: isSignedIn,
+      }, sid);
+    }
+  }, []);
   // Track previous isSignedIn value to detect sign-in transition
   const prevSignedInRef = useRef<boolean | null>(null);
   useEffect(() => { prevSignedInRef.current = isSignedIn; }, [isSignedIn]);
@@ -3245,7 +3297,7 @@ export default function App() {
           method: user.externalAccounts?.[0]?.provider || 'email',
           user_agent: navigator.userAgent,
           referrer: document.referrer || undefined,
-        });
+        }, sessionId || undefined);
       }
     }
     // Close auth gate on sign-in
@@ -3274,7 +3326,7 @@ export default function App() {
 
   return (
     <>
-    {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} />}
+    {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} sessionId={sessionId} />}
     {showQuotaModal && quotaInfo && <QuotaModal limitType={quotaInfo.limitType} weeklyCount={quotaInfo.weeklyCount} onClose={() => setShowQuotaModal(false)} />}
     <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
@@ -3401,6 +3453,7 @@ export default function App() {
                   onQuotaReached={handleQuotaReached}
                   quotaLocked={quotaReached}
                   onLockedClick={() => setShowQuotaModal(true)}
+                  sessionId={sessionId}
                 />
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
