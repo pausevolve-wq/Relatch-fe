@@ -2,11 +2,11 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjsLib from "pdfjs-dist";
 import {
-  Upload, FolderKanban, Settings, Sparkles, ArrowRight, ArrowLeft,
+  Upload, FolderKanban, Settings, ArrowRight, ArrowLeft,
   ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
-  Tag, CircleDot
+  Tag, Columns2, FileUp, Tags, SlidersHorizontal
 } from 'lucide-react';
 import { Show, SignIn, SignUp, UserButton, useUser, useAuth, useSignIn } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
@@ -2891,11 +2891,11 @@ const DEFAULT_CONFIG: SkillConfig = {
 };
 
 const STEPS: { key: AppStep; label: string; icon: React.ReactNode; desc: string }[] = [
-  { key: 'agent', label: 'Choose Agent', icon: <CircleDot className="w-4 h-4" />, desc: 'Pick your AI agent' },
-  { key: 'upload', label: 'Upload', icon: <Upload className="w-4 h-4" />, desc: 'Add your files' },
-  { key: 'organize', label: 'Organize', icon: <FolderKanban className="w-4 h-4" />, desc: 'Categorize data' },
-  { key: 'configure', label: 'Configure', icon: <Settings className="w-4 h-4" />, desc: 'Skill options' },
-  { key: 'generate', label: 'Generate', icon: <Sparkles className="w-4 h-4" />, desc: 'Export .md' },
+  { key: 'agent', label: 'Choose Agent', icon: <Columns2 className="w-4 h-4" />, desc: 'Pick your AI agent' },
+  { key: 'upload', label: 'Upload', icon: <FileUp className="w-4 h-4" />, desc: 'Add your files' },
+  { key: 'organize', label: 'Organize', icon: <Tags className="w-4 h-4" />, desc: 'Categorize data' },
+  { key: 'configure', label: 'Configure', icon: <SlidersHorizontal className="w-4 h-4" />, desc: 'Skill options' },
+  { key: 'generate', label: 'Generate', icon: <FileCode className="w-4 h-4" />, desc: 'Export .md' },
 ];
 
 
