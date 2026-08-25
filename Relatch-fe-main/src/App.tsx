@@ -289,7 +289,7 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string;
 
     const data = await response.json();
     if (data.text && data.text.length > 50) {
-      captureEvent('ocr_used', { provider: data.source });
+      captureEvent('ocr_used', { provider: data.source, session_id: localStorage.getItem('rl_session_id') });
       return { text: data.text, source: data.source, blocks: data.blocks };
     }
 
@@ -1309,6 +1309,10 @@ function fixAiYamlFrontmatter(content: string): string {
 }
 
 async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<string | { content: string; degraded: boolean }> {
+  // Funnel session id (landing→app→backend), read directly from localStorage since this
+  // is a module-level function outside the component tree — distinct from the `sessionId`
+  // parameter above, which is the per-upload-batch quota-replay-dedup id sent to the backend.
+  const rlSessionId = localStorage.getItem('rl_session_id');
   // v2.4: shared Codex error stub - used at every point where Claude would fall through
   // to generateFallbackSkill(). Returns { content, degraded: true } so parseFile surfaces
   // the degraded warning. Structurally valid for Codex CLI; not enriched content.
@@ -1332,7 +1336,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
   }
 
   const genStartedAt = Date.now();
-  captureEvent('skill_generation_started', { template_used: template, target });
+  captureEvent('skill_generation_started', { template_used: template, target, session_id: rlSessionId });
 
   try {
     // v2.3: pass target to detectSkillDomain so Codex path searches CODEX_NATIVE_DOMAINS too.
@@ -1383,13 +1387,13 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     });
 
     if (response.status === 422) {
-      captureEvent('skill_generation_failed', { error_code: '422', latency_ms: Date.now() - genStartedAt });
+      captureEvent('skill_generation_failed', { error_code: '422', latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
       if (target === 'codex') return codexErrorStub('Source content did not contain enough operational signal. Provide a richer document and regenerate.');
       return claudeFallback();
     }
 
     if (response.status === 429) {
-      captureEvent('skill_generation_failed', { error_code: '429', latency_ms: Date.now() - genStartedAt });
+      captureEvent('skill_generation_failed', { error_code: '429', latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
       const errData = await response.json().catch(() => ({}));
       const quotaErr = new Error('QUOTA_REACHED');
       (quotaErr as any).isQuotaError = true;
@@ -1399,14 +1403,14 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     }
 
     if (!response.ok) {
-      captureEvent('skill_generation_failed', { error_code: String(response.status), latency_ms: Date.now() - genStartedAt });
+      captureEvent('skill_generation_failed', { error_code: String(response.status), latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
       return claudeFallback();
     }
 
     const data = await response.json();
     if (!data.enriched) {
-      captureEvent('skill_generation_failed', { error_code: 'no_enriched_content', latency_ms: Date.now() - genStartedAt });
+      captureEvent('skill_generation_failed', { error_code: 'no_enriched_content', latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
       return claudeFallback();
     }
@@ -1414,7 +1418,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     // v2.4: When the backend used the deterministic fallback assembler, surface a degraded
     // signal to parseFile so it can attach a warning to the file card.
     // The artifact itself is structurally valid and renderable - this only adds a notice.
-    captureEvent('skill_generation_completed', { template_used: template, model_used: data.model, latency_ms: Date.now() - genStartedAt });
+    captureEvent('skill_generation_completed', { template_used: template, model_used: data.model, latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
     if (data.model === 'deterministic-fallback' && target === 'codex') {
       return { content: fixAiYamlFrontmatter(data.enriched), degraded: true };
     }
@@ -1423,7 +1427,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
   } catch (err) {
     // Quota errors must bubble up to handleFiles — do not swallow them here.
     if ((err as any)?.isQuotaError) throw err;
-    captureEvent('skill_generation_failed', { error_code: 'network_error', latency_ms: Date.now() - genStartedAt });
+    captureEvent('skill_generation_failed', { error_code: 'network_error', latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
     if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
     return claudeFallback();
   }
@@ -1600,7 +1604,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked, onLockedClick }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean; onLockedClick: () => void }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1655,7 +1659,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
     });
     if (parsed.length > 0) {
       onFilesAdded(parsed);
-      parsed.forEach(pf => captureEvent('file_uploaded', { file_type: pf.type, file_size_mb: +(pf.size / (1024 * 1024)).toFixed(2) }));
+      parsed.forEach(pf => captureEvent('file_uploaded', { file_type: pf.type, file_size_mb: +(pf.size / (1024 * 1024)).toFixed(2), session_id: rlSessionId }));
     }
     if (errors.length > 0) setError(errors.join(' | '));
     if (quotaInfo) onQuotaReached(quotaInfo);
@@ -1972,7 +1976,7 @@ function SkillConfigurator({ config, files, onUpdateConfig }: { config: SkillCon
   );
 }
 
-function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature, waitlistStatus, setWaitlistStatus, showWaitlistPopup, setShowWaitlistPopup }: { files: UploadedFile[]; config: SkillConfig; videoSeenSignature: string | null; setVideoSeenSignature: (s: string | null) => void; waitlistStatus: WaitlistStatus; setWaitlistStatus: (s: WaitlistStatus) => void; showWaitlistPopup: boolean; setShowWaitlistPopup: (v: boolean) => void }) {
+function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature, waitlistStatus, setWaitlistStatus, showWaitlistPopup, setShowWaitlistPopup, sessionId }: { files: UploadedFile[]; config: SkillConfig; videoSeenSignature: string | null; setVideoSeenSignature: (s: string | null) => void; waitlistStatus: WaitlistStatus; setWaitlistStatus: (s: WaitlistStatus) => void; showWaitlistPopup: boolean; setShowWaitlistPopup: (v: boolean) => void; sessionId?: string | null }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [activeFile, setActiveFile] = useState(0);
   const [waitlistEmail, setWaitlistEmail] = useState('');
@@ -2278,6 +2282,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const blob = new Blob([skill.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = skill.filename; a.click(); URL.revokeObjectURL(url);
+    captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: skill.filename, file_count: 1, session_id: sessionId });
   };
 
   const handleDownloadAll = async () => {
@@ -2306,6 +2311,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${slug}.zip`; a.click(); URL.revokeObjectURL(url);
+    captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: `${slug}.zip`, file_count: generatedFiles.length, session_id: sessionId });
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
 
@@ -2508,6 +2514,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
       URL.revokeObjectURL(url);
+      captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: `${codexSlug}-codex-skill.zip`, file_count: 1, session_id: sessionId });
     } else {
       const failedFiles: string[] = [];
       let hasValid = false;
@@ -2538,6 +2545,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skills.zip`; a.click();
       URL.revokeObjectURL(url);
+      captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: `${codexSlug}-codex-skills.zip`, file_count: generatedFiles.length - failedFiles.length, session_id: sessionId });
     }
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
@@ -2574,10 +2582,12 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
       formBody.set('email', email); formBody.set('source', 'relatch-step4');
       formBody.set('generatedFiles', (generatedFiles || []).map((file) => file.filename).join(', '));
       formBody.set('timestamp', new Date().toISOString());
+      if (sessionId) formBody.set('session_id', sessionId);
       const response = await fetch(SPLITFORMS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: formBody.toString() });
       if (!response.ok) throw new Error('Request failed');
       persistWaitlistStatus('joined'); setWaitlistStatus('joined');
       setWaitlistSuccess(true); setWaitlistEmail('');
+      captureEvent('waitlist_submit', { target: config.target, skill_name: config.skillName, session_id: sessionId });
     } catch { setWaitlistError('Could not submit right now. Please try again.'); }
     finally { setWaitlistSubmitting(false); }
   };
@@ -3270,7 +3280,7 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
   );
 }
 
-function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void }) {
+function AuthGate({ initialView, onClose, sessionId }: { initialView: 'sign-up' | 'sign-in'; onClose: () => void; sessionId?: string | null }) {
   const [view, setView] = useState<'sign-up' | 'sign-in'>(initialView);
 
   // Read-only observation of Clerk's own sign-in resource for analytics — never drives
@@ -3280,19 +3290,19 @@ function AuthGate({ initialView, onClose }: { initialView: 'sign-up' | 'sign-in'
   const prevSignInFetchStatus = useRef(signInFetchStatus);
 
   useEffect(() => {
-    if (view === 'sign-in') captureEvent('clerk_signin_opened');
+    if (view === 'sign-in') captureEvent('clerk_signin_opened', { session_id: sessionId });
   }, [view]);
 
   useEffect(() => {
     if (view === 'sign-in' && signInFetchStatus === 'fetching' && prevSignInFetchStatus.current !== 'fetching') {
-      captureEvent('clerk_signin_attempted', { user_agent: navigator.userAgent, referrer: document.referrer });
+      captureEvent('clerk_signin_attempted', { user_agent: navigator.userAgent, referrer: document.referrer, session_id: sessionId });
     }
     prevSignInFetchStatus.current = signInFetchStatus;
   }, [signInFetchStatus, view]);
 
   useEffect(() => {
     if (view === 'sign-in' && signInErrors.global && signInErrors.global.length > 0) {
-      captureEvent('clerk_signin_failed', { error: signInErrors.global[0]?.message || signInErrors.global[0]?.code || 'unknown' });
+      captureEvent('clerk_signin_failed', { error: signInErrors.global[0]?.message || signInErrors.global[0]?.code || 'unknown', session_id: sessionId });
     }
   }, [signInErrors, view]);
 
@@ -3371,6 +3381,18 @@ export default function App() {
   const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly'; weeklyCount: number } | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const quotaReached = quotaInfo !== null;
+  // Cross-service funnel session id, distinct from the per-upload-batch `sessionId` used
+  // for quota-replay dedup below. Read once on mount from the landing page's handoff
+  // (?sid= URL param) or a returning visit's localStorage copy; not regenerated per batch.
+  const [rlSessionId, setRlSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    const sid = new URLSearchParams(window.location.search).get('sid') || localStorage.getItem('rl_session_id');
+    if (sid) {
+      setRlSessionId(sid);
+      localStorage.setItem('rl_session_id', sid);
+      captureEvent('app_mount', { session_id: sid });
+    }
+  }, []);
 
   const stepIndex = STEPS.findIndex(s => s.key === currentStep);
   const canGoNext =
@@ -3414,6 +3436,7 @@ export default function App() {
           method: user.externalAccounts?.[0]?.provider?.replace('oauth_', '') || 'email',
           user_agent: navigator.userAgent,
           referrer: document.referrer,
+          session_id: rlSessionId,
         });
       }
     }
@@ -3442,7 +3465,7 @@ export default function App() {
 
   return (
     <>
-    {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} />}
+    {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} sessionId={rlSessionId} />}
     {showQuotaModal && quotaInfo && <QuotaModal limitType={quotaInfo.limitType} weeklyCount={quotaInfo.weeklyCount} onClose={() => setShowQuotaModal(false)} />}
     <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
@@ -3569,11 +3592,12 @@ export default function App() {
                   onQuotaReached={handleQuotaReached}
                   quotaLocked={quotaReached}
                   onLockedClick={() => setShowQuotaModal(true)}
+                  rlSessionId={rlSessionId}
                 />
               )}
               {currentStep === 'organize' && <FileOrganizer files={files} onUpdateCategory={handleUpdateCategory} />}
               {currentStep === 'configure' && <SkillConfigurator config={config} files={files} onUpdateConfig={setConfig} />}
-              {currentStep === 'generate' && <SkillOutput files={files} config={config} videoSeenSignature={videoSeenSignature} setVideoSeenSignature={setVideoSeenSignature} waitlistStatus={waitlistStatus} setWaitlistStatus={setWaitlistStatus} showWaitlistPopup={showWaitlistPopup} setShowWaitlistPopup={setShowWaitlistPopup} />}
+              {currentStep === 'generate' && <SkillOutput files={files} config={config} videoSeenSignature={videoSeenSignature} setVideoSeenSignature={setVideoSeenSignature} waitlistStatus={waitlistStatus} setWaitlistStatus={setWaitlistStatus} showWaitlistPopup={showWaitlistPopup} setShowWaitlistPopup={setShowWaitlistPopup} sessionId={rlSessionId} />}
             </div>
             <div className="flex items-center justify-between mt-7 pb-10">
               <button onClick={goPrev} disabled={stepIndex === 0} className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all ${stepIndex === 0 ? 'opacity-0 pointer-events-none' : 'text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05]'}`}>
