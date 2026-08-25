@@ -6,7 +6,7 @@ import {
   ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
-  Tag
+  Tag, CircleDot
 } from 'lucide-react';
 import { Show, SignIn, SignUp, UserButton, useUser, useAuth, useSignIn } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
@@ -2891,7 +2891,7 @@ const DEFAULT_CONFIG: SkillConfig = {
 };
 
 const STEPS: { key: AppStep; label: string; icon: React.ReactNode; desc: string }[] = [
-  { key: 'agent', label: 'Choose Agent', icon: <Brain className="w-4 h-4" />, desc: 'Pick your AI agent' },
+  { key: 'agent', label: 'Choose Agent', icon: <CircleDot className="w-4 h-4" />, desc: 'Pick your AI agent' },
   { key: 'upload', label: 'Upload', icon: <Upload className="w-4 h-4" />, desc: 'Add your files' },
   { key: 'organize', label: 'Organize', icon: <FolderKanban className="w-4 h-4" />, desc: 'Categorize data' },
   { key: 'configure', label: 'Configure', icon: <Settings className="w-4 h-4" />, desc: 'Skill options' },
@@ -3182,8 +3182,12 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
     onConfirm(choice);
   };
 
-  const isClaudeSelected = target === 'claude';
-  const isCodexSelected = target === 'codex';
+  // Neither card is selected until the user actually clicks one — `target` carries a
+  // meaningless default ('claude') until `locked` is true, so it must not drive the ring
+  // on its own. While a choice is mid-confirm (`pending` set), that choice's card lights up
+  // instead — this also fixes clicking Codex not visibly highlighting it before confirming.
+  const isClaudeSelected = pending ? pending === 'claude' : locked && target === 'claude';
+  const isCodexSelected = pending ? pending === 'codex' : locked && target === 'codex';
 
   return (
     <div className="relative">
@@ -3476,7 +3480,7 @@ export default function App() {
       <div className="fixed inset-0 pointer-events-none opacity-[0.012]" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`, backgroundSize: '64px 64px' }} />
       <div className="relative z-10">
         <header className="border-b border-white/[0.05]">
-          <div className="max-w-5xl mx-auto px-6 py-3.5 flex items-center justify-between">
+          <div className="max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
            <div className="flex items-center gap-2">
   <img
     src="/logo.png"
@@ -3529,7 +3533,7 @@ export default function App() {
           </div>
         </header>
         {(currentStep === 'agent' || (currentStep === 'upload' && files.length === 0)) && (
-          <div className="max-w-5xl mx-auto px-6 pt-14 pb-6 text-center">
+          <div className="max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-6 pt-14 pb-6 text-center">
             <AnimatedSection delay={100}>
               <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-3 leading-tight tracking-tight">
                 Your Work.<br /><span className="bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Built Into Every Response.</span>
@@ -3554,7 +3558,7 @@ export default function App() {
             </AnimatedSection>
           </div>
         )}
-        <div className="max-w-5xl mx-auto px-6 py-5">
+        <div className="max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-6 py-5">
           <div className="flex items-center justify-between mb-7">
             {STEPS.map((step, i) => (
               <div key={step.key} className="flex items-center flex-1 last:flex-none">
@@ -3570,7 +3574,7 @@ export default function App() {
               </div>
             ))}
           </div>
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl xl:max-w-4xl mx-auto">
             <div key={currentStep}>
               {currentStep === 'agent' && (
                 <AnimatedSection>
@@ -3621,7 +3625,7 @@ export default function App() {
           </div>
         </div>
         <footer className="border-t border-white/[0.03]">
-          <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
             <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
           </div>
