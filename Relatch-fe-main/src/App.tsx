@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import * as pdfjsLib from "pdfjs-dist";
 import {
   Upload, FolderKanban, Settings, ArrowRight, ArrowLeft,
-  ChevronRight, Zap, FileText, Shield, X, Image, Code, Database,
+  ChevronRight, Zap, FileText, X, Image, Code, Database,
   Globe, AlertCircle, CheckCircle2, Brain, BookOpen, ListChecks, FileCode,
   Layers, ChevronDown, MessageSquare, Download, Copy, Check, Package, Info, Lock,
   Tag, Columns2, FileUp, Tags, SlidersHorizontal
@@ -3497,10 +3497,6 @@ export default function App() {
   </div>
 </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.025] border border-white/[0.05]">
-                <Shield className="w-3 h-3 text-emerald-400" />
-                <span className="text-[10px] text-gray-400 font-medium">Private by design.</span>
-              </div>
               <Show when="signed-out">
                 <div className="flex items-center gap-2">
                   <button
