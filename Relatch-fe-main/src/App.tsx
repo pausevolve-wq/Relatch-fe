@@ -77,6 +77,8 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
 
 const OCR_PROXY_URL = 'https://claudly-proxy.vercel.app/api/ocr';
 const ENRICH_PROXY_URL = 'https://claudly-proxy.vercel.app/api/enrich';
+const ANON_TOKEN_URL = 'https://claudly-proxy.vercel.app/api/anon-token';
+const ANON_TOKEN_STORAGE_KEY = 'relatch_anon_token';
 
 function getFileExtension(name: string): string {
   return '.' + name.split('.').pop()?.toLowerCase();
@@ -274,11 +276,13 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string;
     const mimeType = file.type || 'application/pdf';
 
     const token = _getToken ? await _getToken() : null;
+    const anonToken = !token ? localStorage.getItem(ANON_TOKEN_STORAGE_KEY) : null;
     const response = await fetch(OCR_PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(anonToken ? { 'X-Anon-Token': anonToken } : {}),
       },
       body: JSON.stringify({ base64, mimeType, fileName: file.name }),
     });
@@ -1357,11 +1361,13 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
       : undefined;
 
     const token = _getToken ? await _getToken() : null;
+    const anonToken = !token ? localStorage.getItem(ANON_TOKEN_STORAGE_KEY) : null;
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(anonToken ? { 'X-Anon-Token': anonToken } : {}),
       },
       body: JSON.stringify({
         rawText,
@@ -3077,8 +3083,10 @@ function WaitlistPopup({ target, email, onEmailChange, error, success, alreadyJo
     };
   }, [onClose]);
 
-  // Step 5 guarantees a signed-in Clerk session (requireAuth gates every step advance), so seed
-  // the field once from the account's own email rather than making the user type it from scratch.
+  // Step 5 no longer guarantees a signed-in Clerk session — requireAuth also lets an anonymous
+  // trial user through (see requireAuth). For a signed-in user, seed the field once from the
+  // account's own email; `user` is undefined/null for an anonymous trial user, so this
+  // optional-chains to a no-op and the field is left for them to type, same as before.
   useEffect(() => {
     if (!email && user?.primaryEmailAddress?.emailAddress) {
       onEmailChange(user.primaryEmailAddress.emailAddress);
@@ -3166,7 +3174,7 @@ function AgentSelector({ target, locked, onConfirm, requireAuth }: {
   target: 'claude' | 'codex';
   locked: boolean;
   onConfirm: (t: 'claude' | 'codex') => void;
-  requireAuth: (action: () => void) => void;
+  requireAuth: (action: () => void) => Promise<void>;
 }) {
   const [pending, setPending] = useState<'claude' | 'codex' | null>(null);
 
@@ -3447,13 +3455,46 @@ export default function App() {
     prevSignedIn.current = isSignedIn;
   }, [isSignedIn, user]);
 
-  const requireAuth = useCallback((action: () => void) => {
+  const requireAuth = useCallback(async (action: () => void) => {
     if (!isLoaded) return;
     if (isSignedIn) {
       action();
-    } else {
-      setAuthGateView('sign-up');
+      return;
     }
+    // A trial token already in this browser (freshly minted earlier in this same wizard
+    // journey, or left over from an earlier visit) always lets the wizard proceed — this
+    // callback fires on every step advance, not just once, so re-gating here would wall
+    // an anonymous user off one step after they start. Whether the token is actually
+    // still valid server-side is only checked at the real enrich/ocr call, not here — an
+    // expired/dead token there currently degrades to a local fallback skill (same failure
+    // path as any other API error) rather than re-showing sign-up; known v1 limitation,
+    // not a correctness bug (see the anon-token implementation plan in the vault).
+    // localStorage access is wrapped defensively, matching this file's existing pattern
+    // (see readWaitlistStatus below) — some private-browsing/sandboxed contexts throw.
+    let existingAnonToken: string | null = null;
+    try { existingAnonToken = localStorage.getItem(ANON_TOKEN_STORAGE_KEY); } catch { /* unavailable, treat as no token */ }
+    if (existingAnonToken) {
+      action();
+      return;
+    }
+    // First-ever anonymous interaction on this browser: mint a trial token.
+    let mintedToken: string | null = null;
+    try {
+      const res = await fetch(ANON_TOKEN_URL, { method: 'POST' });
+      if (res.ok) {
+        const { token } = await res.json();
+        if (typeof token === 'string' && token) mintedToken = token;
+      }
+    } catch {
+      // fail closed, not open — mintedToken stays null
+    }
+    if (mintedToken) {
+      try { localStorage.setItem(ANON_TOKEN_STORAGE_KEY, mintedToken); } catch { /* unavailable — proceed anyway, just won't persist across reload */ }
+      captureEvent('anon_trial_started', { session_id: rlSessionId });
+      action();
+      return;
+    }
+    setAuthGateView('sign-up');
   }, [isLoaded, isSignedIn]);
 
   const goNext = () => {
