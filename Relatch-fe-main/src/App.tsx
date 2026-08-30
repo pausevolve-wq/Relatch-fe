@@ -79,6 +79,16 @@ const OCR_PROXY_URL = 'https://claudly-proxy.vercel.app/api/ocr';
 const ENRICH_PROXY_URL = 'https://claudly-proxy.vercel.app/api/enrich';
 const ANON_TOKEN_URL = 'https://claudly-proxy.vercel.app/api/anon-token';
 const ANON_TOKEN_STORAGE_KEY = 'relatch_anon_token';
+// Set once this journey reaches the terminal 'generate' step (see the useEffect in App())
+// — distinct from ANON_TOKEN_STORAGE_KEY merely existing, which stays true throughout the
+// current journey's own remaining steps. requireAuth checks this first so a *returning*
+// visitor (reload, new tab) who already completed a trial is sent straight to sign-up at
+// step 1, instead of walking the whole wizard again and only discovering it's dead at the
+// final generate call. This is a UX convenience, not the real enforcement boundary —
+// enrich.js's own per-token sessionId binding is what actually prevents a second free
+// generation server-side, even if this flag is cleared, bypassed, or never set (e.g. the
+// journey is abandoned before reaching 'generate').
+const ANON_TRIAL_USED_KEY = 'relatch_anon_trial_used';
 
 function getFileExtension(name: string): string {
   return '.' + name.split('.').pop()?.toLowerCase();
@@ -1408,6 +1418,19 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
       throw quotaErr;
     }
 
+    if (response.status === 401 && anonToken) {
+      // Only special-cased on the anonymous path — a signed-in user's own 401 (expired
+      // Clerk session) is a different, existing scenario and falls through to the generic
+      // handling below unchanged. Mirrors the isQuotaError pattern just above: this must
+      // bubble up to handleFiles rather than silently degrading to a fallback skill, so the
+      // trial-exhausted anonymous user actually sees the sign-up gate instead of walking
+      // away thinking a real (but unenriched) generation succeeded.
+      captureEvent('skill_generation_failed', { error_code: '401_anon', latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
+      const anonErr = new Error('ANON_TOKEN_INVALID');
+      (anonErr as any).isAnonTokenInvalid = true;
+      throw anonErr;
+    }
+
     if (!response.ok) {
       captureEvent('skill_generation_failed', { error_code: String(response.status), latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
       if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
@@ -1431,8 +1454,9 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
 
     return fixAiYamlFrontmatter(data.enriched);
   } catch (err) {
-    // Quota errors must bubble up to handleFiles — do not swallow them here.
-    if ((err as any)?.isQuotaError) throw err;
+    // Quota errors and anon-trial-exhausted errors must bubble up to handleFiles — do not
+    // swallow them here.
+    if ((err as any)?.isQuotaError || (err as any)?.isAnonTokenInvalid) throw err;
     captureEvent('skill_generation_failed', { error_code: 'network_error', latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
     if (target === 'codex') return codexErrorStub('Skill generation encountered an error. Review source and regenerate.');
     return claudeFallback();
@@ -1610,7 +1634,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, onAnonTokenInvalid, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; onAnonTokenInvalid: () => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1650,6 +1674,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
     let quotaInfo: { limitType: 'daily' | 'weekly'; weeklyCount: number } | null = null;
+    let anonTokenInvalid = false;
 
     results.forEach((result, i) => {
       if (result.status === 'fulfilled') {
@@ -1658,6 +1683,8 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
         const err = result.reason;
         if ((err as any)?.isQuotaError) {
           if (!quotaInfo) quotaInfo = { limitType: (err as any).limitType || 'daily', weeklyCount: (err as any).weeklyCount ?? 0 };
+        } else if ((err as any)?.isAnonTokenInvalid) {
+          anonTokenInvalid = true;
         } else {
           errors.push(`${allFiles[i].name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
@@ -1669,8 +1696,9 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
     }
     if (errors.length > 0) setError(errors.join(' | '));
     if (quotaInfo) onQuotaReached(quotaInfo);
+    if (anonTokenInvalid) onAnonTokenInvalid();
     setIsProcessing(false);
-  }, [onFilesAdded, files.length, target, onQuotaReached]);
+  }, [onFilesAdded, files.length, target, onQuotaReached, onAnonTokenInvalid]);
 
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files); }, [handleFiles]);
 
@@ -3149,7 +3177,7 @@ function WaitlistPopup({ target, email, onEmailChange, error, success, alreadyJo
                 type="email"
                 value={email}
                 onChange={(e) => onEmailChange(e.target.value)}
-                placeholder="you@company.com"
+                placeholder="you@gmail.com"
                 className="flex-1 px-3.5 py-2.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500/40 transition-all outline-none"
               />
               <button
@@ -3420,7 +3448,23 @@ export default function App() {
     setCurrentStep('upload');
   }, []);
 
-  const handleFilesAdded = useCallback((newFiles: UploadedFile[]) => setFiles(prev => [...prev, ...newFiles]), []);
+  // True once THIS mount has an active (not-yet-rejected) anon trial in progress — set the
+  // moment requireAuth first mints or finds a usable token, cleared only by a genuine
+  // server-side rejection (handleAnonTokenInvalid). Lets requireAuth tell "still navigating
+  // my own in-progress trial, back and forth" (this stays true) apart from "a genuinely new
+  // page load reusing a stale persisted 'used' flag" (this starts false on every fresh
+  // mount, unlike localStorage) — see requireAuth below for why both signals are needed.
+  const mountHasLiveAnonTrial = useRef(false);
+  // True once a REAL file has been uploaded and handed to parseFile/enrichWithAI in this
+  // mount — set from handleFilesAdded below. The "Try a sample" path never goes through
+  // handleFiles/parseFile at all (makeSampleUploadedFile builds content locally), so a
+  // sample-only journey must NOT burn the one-time trial it never actually spent.
+  const hasRealUploadThisMount = useRef(false);
+
+  const handleFilesAdded = useCallback((newFiles: UploadedFile[]) => {
+    hasRealUploadThisMount.current = true;
+    setFiles(prev => [...prev, ...newFiles]);
+  }, []);
   const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
   const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
   const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
@@ -3429,7 +3473,38 @@ export default function App() {
     setShowQuotaModal(true);
   }, []);
 
+  const handleAnonTokenInvalid = useCallback(() => {
+    // Server-confirmed the token is dead (expired, or already claimed by a different run) —
+    // revoke this mount's "still mid-trial" status too, not just the token itself, so
+    // requireAuth's very next call re-checks ANON_TRIAL_USED_KEY instead of assuming this
+    // mount is still safely inside its own earlier trial.
+    mountHasLiveAnonTrial.current = false;
+    try {
+      localStorage.removeItem(ANON_TOKEN_STORAGE_KEY);
+      localStorage.setItem(ANON_TRIAL_USED_KEY, '1');
+    } catch { /* best-effort */ }
+    setAuthGateView('sign-up');
+  }, []);
+
   useEffect(() => { if (isSignedIn) setAuthGateView(null); }, [isSignedIn]);
+
+  // Marks the anon trial as spent the moment this journey reaches its terminal step —
+  // NOT inside enrichWithAI itself. Real enrichment already happens during the upload step
+  // (parseFile -> enrichWithAI runs per file as soon as it's added), but the wizard still has
+  // several more requireAuth-gated "Continue" clicks ahead of it (upload -> organize ->
+  // configure -> generate); marking the trial used any earlier than this blocks the SAME
+  // first-time journey from ever reaching its own generate step. 'generate' is the wizard's
+  // last step (STEPS array), so by the time it's reached every FORWARD requireAuth call this
+  // journey needs has already fired — going Back and forward again afterward is handled by
+  // mountHasLiveAnonTrial in requireAuth, not by withholding this flag. Gated on
+  // hasRealUploadThisMount so a sample-only journey (never spent a real generation) isn't
+  // wrongly marked used.
+  useEffect(() => {
+    if (currentStep !== 'generate' || isSignedIn || !hasRealUploadThisMount.current) return;
+    try {
+      if (localStorage.getItem(ANON_TOKEN_STORAGE_KEY)) localStorage.setItem(ANON_TRIAL_USED_KEY, '1');
+    } catch { /* best-effort */ }
+  }, [currentStep, isSignedIn]);
 
   // Clerk -> PostHog identify wiring. prevSignedIn distinguishes a real sign-in transition
   // (false -> true) from an already-authenticated page load, so clerk_signin_success only
@@ -3461,22 +3536,44 @@ export default function App() {
       action();
       return;
     }
-    // A trial token already in this browser (freshly minted earlier in this same wizard
-    // journey, or left over from an earlier visit) always lets the wizard proceed — this
-    // callback fires on every step advance, not just once, so re-gating here would wall
-    // an anonymous user off one step after they start. Whether the token is actually
-    // still valid server-side is only checked at the real enrich/ocr call, not here — an
-    // expired/dead token there currently degrades to a local fallback skill (same failure
-    // path as any other API error) rather than re-showing sign-up; known v1 limitation,
-    // not a correctness bug (see the anon-token implementation plan in the vault).
-    // localStorage access is wrapped defensively, matching this file's existing pattern
-    // (see readWaitlistStatus below) — some private-browsing/sandboxed contexts throw.
+    // localStorage access is wrapped defensively throughout this block, matching this
+    // file's existing pattern (see readWaitlistStatus below) — some private-browsing/
+    // sandboxed contexts throw.
     let existingAnonToken: string | null = null;
     try { existingAnonToken = localStorage.getItem(ANON_TOKEN_STORAGE_KEY); } catch { /* unavailable, treat as no token */ }
-    if (existingAnonToken) {
+
+    if (existingAnonToken && mountHasLiveAnonTrial.current) {
+      // This mount is already mid-trial — minted (or found) earlier in this SAME page load
+      // and not yet rejected. Let it keep going regardless of ANON_TRIAL_USED_KEY, which
+      // this very journey may itself have just set on reaching 'generate' — otherwise going
+      // Back to fix something and clicking Continue/Generate again would wrongly wall off
+      // the very journey that's supposed to be allowed through.
       action();
       return;
     }
+
+    let trialAlreadyUsed = false;
+    try { trialAlreadyUsed = !!localStorage.getItem(ANON_TRIAL_USED_KEY); } catch { /* unavailable, treat as not used */ }
+    if (trialAlreadyUsed) {
+      // Not mid-trial in THIS mount (checked above) and the persisted flag says a trial was
+      // already spent — this is a genuinely new page load (reload, new tab) reusing state
+      // left by an earlier one, or a rejection earlier in this same mount. Straight to
+      // sign-up, no re-mint. The actual enforcement is server-side (enrich.js binds the
+      // token to the specific run that first claimed it); this flag only controls how early
+      // the UI shows the gate.
+      setAuthGateView('sign-up');
+      return;
+    }
+
+    if (existingAnonToken) {
+      // A token exists but this mount hadn't marked itself live yet (e.g. very first
+      // requireAuth call after a fresh mount that happens to find a still-good, never-used
+      // token from an abandoned earlier visit) — safe to adopt and continue.
+      mountHasLiveAnonTrial.current = true;
+      action();
+      return;
+    }
+
     // First-ever anonymous interaction on this browser: mint a trial token.
     let mintedToken: string | null = null;
     try {
@@ -3490,12 +3587,13 @@ export default function App() {
     }
     if (mintedToken) {
       try { localStorage.setItem(ANON_TOKEN_STORAGE_KEY, mintedToken); } catch { /* unavailable — proceed anyway, just won't persist across reload */ }
+      mountHasLiveAnonTrial.current = true;
       captureEvent('anon_trial_started', { session_id: rlSessionId });
       action();
       return;
     }
     setAuthGateView('sign-up');
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, rlSessionId]);
 
   const goNext = () => {
     requireAuth(() => {
@@ -3631,6 +3729,7 @@ export default function App() {
                   onSampleLoad={handleAddSample}
                   target={config.target}
                   onQuotaReached={handleQuotaReached}
+                  onAnonTokenInvalid={handleAnonTokenInvalid}
                   quotaLocked={quotaReached}
                   onLockedClick={() => setShowQuotaModal(true)}
                   rlSessionId={rlSessionId}
