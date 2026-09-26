@@ -254,6 +254,22 @@ function stripArtifacts(text: string): string {
     .trim();
 }
 
+// 2026-09-26 content fidelity (vault: "Relatch Content Fidelity - Extraction and Selection").
+// stripArtifacts above collapses EVERY run of 2+ whitespace into one space and deletes anything
+// shaped like <...>. A Windows line break (\r\n) is 2 whitespace chars, so an Excel CSV became one
+// line and was rejected as "no behavioral patterns"; YAML and Python lost their line breaks and
+// indentation; TypeScript generics (useState<Project[]>) and markdown autolinks were deleted.
+// This keeps line breaks, indentation and <...> text and removes only invisible characters.
+// stripArtifacts stays for the raw-HTML fallback and unknown types.
+function normalizeExtractedText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function stripXmlArtifacts(text: string): string {
   return text
     .replace(/w:[a-zA-Z]+/g, ' ')
@@ -416,7 +432,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
       else lines.push(texts);
     }
     const text = lines.join('\n');
-    if (text.trim().length > 0) return { type: 'docx', text: stripArtifacts(text), warnings };
+    if (text.trim().length > 0) return { type: 'docx', text: normalizeExtractedText(text), warnings };
   } catch (err) {
     warnings.push('DOCX structure is complex — attempting secondary extraction.');
     try {
@@ -448,11 +464,11 @@ async function extractText(file: File, type: NormalizedFileType): Promise<Extrac
   if (type === 'docx') return extractDocxText(file);
   if (type === 'html') {
     const raw = await readAsText(file);
-    return { type, text: stripArtifacts(extractTextFromHtml(raw)), warnings: [] };
+    return { type, text: normalizeExtractedText(extractTextFromHtml(raw)), warnings: [] };
   }
   if (type === 'txt') {
     const raw = await readAsText(file);
-    return { type, text: stripArtifacts(raw), warnings: [] };
+    return { type, text: normalizeExtractedText(raw), warnings: [] };
   }
   const raw = stripArtifacts(await readAsText(file));
   return { type: 'unknown', text: raw, warnings: [] };
