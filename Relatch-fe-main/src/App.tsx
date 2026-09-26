@@ -3778,7 +3778,10 @@ export default function App() {
         </div>
         <footer className="border-t border-white/[0.03]">
           <div className="max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <p className="text-[11px] text-gray-600">All processing happens in your browser. Your files never touch our servers.</p>
+            {/* 2026-09-26: replaced "All processing happens in your browser. Your files never touch
+                our servers." - untrue: the extracted text goes to the enrich backend and its AI providers
+                (Gemini, OpenRouter/Groq, TypeSafe Jev), and scanned files go to OCR. See relatch.online/privacy. */}
+            <p className="text-[11px] text-gray-600">Your document's text (and scanned files, for OCR) is sent to our AI providers to generate your skill. <a href="https://relatch.online/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-400">Privacy Policy</a></p>
             <p className="text-[11px] text-gray-700">Relatch v1.2.3</p>
           </div>
         </footer>
