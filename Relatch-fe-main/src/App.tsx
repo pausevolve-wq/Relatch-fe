@@ -1511,10 +1511,18 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     throw new Error(profile.rejectReason || 'This file type cannot be processed.');
   }
 
+  // 2026-10-04 input-cap study (vault "Relatch Model Provider Routing - Plan", status block):
+  // letting the model read 2x more of a medium or large document kept more of the source (key
+  // terms, numbers) with no cut-offs, no invented numbers and no added latency; 4x added nothing
+  // more. Claude target only: Codex text is distilled to the cap and was not studied, so it keeps
+  // profile.charCap. Small documents are already read whole. The backend accepts at most this
+  // (SERVER_CHAR_CAP in relatch api/enrich.js), so raising it there alone changes nothing.
+  const charCap = target === 'claude' && profile.sizeClass !== 'small' ? profile.charCap * 2 : profile.charCap;
+
   const textForEnrichment = target === 'codex'
     ? distillForCodex(extracted.text, profile.charCap)
     : profile.sizeClass === 'large'
-      ? sampleLargeDocument(extracted.text, profile.charCap)
+      ? sampleLargeDocument(extracted.text, charCap)
       : extracted.text;
 
   // v2.4: enrichWithAI returns string on success or { content, degraded: true } when the
@@ -1526,7 +1534,7 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     file.name,
     profile.template,
     profile.richFormats,
-    profile.charCap,
+    charCap,
     profile.sizeClass,
     target,
     sessionId
