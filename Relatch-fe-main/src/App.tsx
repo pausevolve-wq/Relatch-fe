@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Show, SignIn, SignUp, UserButton, useUser, useAuth, useSignIn } from "@clerk/react";
 import { CLAUDE_LOGO_URI, CODEX_BASE_URI, CODEX_EYE_URI, CODEX_UNDERSCORE_URI, CLAUDE_LOGO_WHITE_URI, CODEX_LOGO_WHITE_URI } from "./agentLogos";
-import { identifyUser, captureEvent } from "./analytics";
+import { captureEvent } from "./analytics";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -2340,7 +2340,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const blob = new Blob([skill.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = skill.filename; a.click(); URL.revokeObjectURL(url);
-    captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: skill.filename, file_count: 1, session_id: sessionId });
+    captureEvent('skill_downloaded', { target: config.target, file_count: 1, session_id: sessionId });
   };
 
   const handleDownloadAll = async () => {
@@ -2369,7 +2369,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${slug}.zip`; a.click(); URL.revokeObjectURL(url);
-    captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: `${slug}.zip`, file_count: generatedFiles.length, session_id: sessionId });
+    captureEvent('skill_downloaded', { target: config.target, file_count: generatedFiles.length, session_id: sessionId });
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
 
@@ -2572,7 +2572,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skill.zip`; a.click();
       URL.revokeObjectURL(url);
-      captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: `${codexSlug}-codex-skill.zip`, file_count: 1, session_id: sessionId });
+      captureEvent('skill_downloaded', { target: config.target, file_count: 1, session_id: sessionId });
     } else {
       const failedFiles: string[] = [];
       let hasValid = false;
@@ -2603,7 +2603,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `${codexSlug}-codex-skills.zip`; a.click();
       URL.revokeObjectURL(url);
-      captureEvent('skill_downloaded', { target: config.target, skill_name: config.skillName, file_name: `${codexSlug}-codex-skills.zip`, file_count: generatedFiles.length - failedFiles.length, session_id: sessionId });
+      captureEvent('skill_downloaded', { target: config.target, file_count: generatedFiles.length - failedFiles.length, session_id: sessionId });
     }
     if (currentSignature) setVideoSeenSignature(currentSignature);
   };
@@ -2645,7 +2645,7 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
       if (!response.ok) throw new Error('Request failed');
       persistWaitlistStatus('joined'); setWaitlistStatus('joined');
       setWaitlistSuccess(true); setWaitlistEmail('');
-      captureEvent('waitlist_submit', { target: config.target, skill_name: config.skillName, session_id: sessionId });
+      captureEvent('waitlist_submit', { target: config.target, session_id: sessionId });
     } catch { setWaitlistError('Could not submit right now. Please try again.'); }
     finally { setWaitlistSubmitting(false); }
   };
@@ -3530,23 +3530,15 @@ export default function App() {
     } catch { /* best-effort */ }
   }, [currentStep, isSignedIn]);
 
-  // Clerk -> PostHog identify wiring. prevSignedIn distinguishes a real sign-in transition
+  // Track sign-in transitions without sending account identity to analytics. prevSignedIn distinguishes a real sign-in transition
   // (false -> true) from an already-authenticated page load, so clerk_signin_success only
   // fires on an actual sign-in action, not every visit from a returning session.
   const prevSignedIn = useRef(isSignedIn);
   useEffect(() => {
     if (isSignedIn && user) {
-      identifyUser(user.id, {
-        email: user.primaryEmailAddress?.emailAddress,
-        name: user.fullName,
-        username: user.username,
-        clerk_created_at: user.createdAt,
-      });
       if (prevSignedIn.current === false) {
         captureEvent('clerk_signin_success', {
           method: user.externalAccounts?.[0]?.provider?.replace('oauth_', '') || 'email',
-          user_agent: navigator.userAgent,
-          referrer: document.referrer,
           session_id: rlSessionId,
         });
       }

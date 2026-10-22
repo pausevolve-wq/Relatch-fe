@@ -85,15 +85,19 @@ gtag('config', 'G-3S6Z146BBL');
 
 (window as any).posthog.init('phc_nszMZqivMkCWhZRC5bq3XexX5iapQMXzj6u5YPr94B3k', {
   api_host: 'https://us.i.posthog.com',
-  person_profiles: 'identified_only',
-  cross_subdomain_cookie: true,
-  persistence: 'localStorage+cookie',
-  autocapture: true,
+  person_profiles: 'never',
+  property_denylist: ['email', 'name', 'username', 'clerk_created_at', 'skill_name', 'file_name'],
+  cross_subdomain_cookie: false,
+  persistence: 'memory',
+  autocapture: false,
   capture_pageview: true,
   capture_pageleave: true,
+  // Do not record document/skill contents. Masking remains defense in depth.
+  disable_session_recording: true,
   session_recording: {
-    maskAllInputs: false,
-    maskInputOptions: { password: true },
+    maskAllInputs: true,
+    maskTextSelector: '*',
+    blockSelector: '#root',
   },
 });
 
@@ -110,12 +114,15 @@ declare global {
   }
 }
 
-export function identifyUser(distinctId: string, properties?: Record<string, unknown>): void {
-  if (typeof window === 'undefined' || !window.posthog) return;
-  window.posthog.identify(distinctId, properties);
-}
-
+// Explicit allowlist: adding a UI field cannot silently add personal/document data.
+const SAFE_EVENT_KEYS = new Set([
+  'template_used', 'target', 'session_id', 'provider', 'error_code', 'latency_ms',
+  'model_used', 'file_type', 'file_size_mb', 'file_count', 'method',
+]);
 export function captureEvent(name: string, properties?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !window.posthog) return;
-  window.posthog.capture(name, properties);
+  const safe = Object.fromEntries(Object.entries(properties || {}).filter(
+    ([key, value]) => SAFE_EVENT_KEYS.has(key) && ['string', 'number', 'boolean'].includes(typeof value)
+  ));
+  window.posthog.capture(name, safe);
 }
