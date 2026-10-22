@@ -1433,6 +1433,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
       (quotaErr as any).isQuotaError = true;
       (quotaErr as any).limitType = errData.limitType || 'daily';
       (quotaErr as any).weeklyCount = errData.weeklyCount ?? 0;
+      (quotaErr as any).message = typeof errData.message === 'string' ? errData.message : undefined;
       throw quotaErr;
     }
 
@@ -1660,7 +1661,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, onAnonTokenInvalid, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; onAnonTokenInvalid: () => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, onAnonTokenInvalid, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string }) => void; onAnonTokenInvalid: () => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1699,7 +1700,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
     const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target, sessionId)));
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
-    let quotaInfo: { limitType: 'daily' | 'weekly'; weeklyCount: number } | null = null;
+    let quotaInfo: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string } | null = null;
     let anonTokenInvalid = false;
 
     results.forEach((result, i) => {
@@ -1708,7 +1709,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
       } else {
         const err = result.reason;
         if ((err as any)?.isQuotaError) {
-          if (!quotaInfo) quotaInfo = { limitType: (err as any).limitType || 'daily', weeklyCount: (err as any).weeklyCount ?? 0 };
+          if (!quotaInfo) quotaInfo = { limitType: (err as any).limitType || 'daily', weeklyCount: (err as any).weeklyCount ?? 0, message: (err as any).message };
         } else if ((err as any)?.isAnonTokenInvalid) {
           anonTokenInvalid = true;
         } else {
@@ -3036,7 +3037,7 @@ function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
   );
 }
 
-function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 'weekly'; weeklyCount: number; onClose: () => void }) {
+export function QuotaModal({ limitType, weeklyCount, message, onClose }: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -3051,6 +3052,10 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
   const WEEKLY_LIMIT = 35;
   const weeklyPct = Math.min((weeklyCount / WEEKLY_LIMIT) * 100, 100);
   const isWeekly = limitType === 'weekly';
+  // A spent or expired batch is NOT an allowance exhaustion: no credit was consumed,
+  // so this renders its own state (server-provided message, no usage bar) instead of
+  // the daily/weekly quota copy.
+  const isBatch = limitType === 'session' || limitType === 'session_expired';
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
@@ -3076,15 +3081,28 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
           <img src="/lock.png" className="w-9 h-9 object-contain" alt="" />
         </div>
         <h2 id="relatch-quota-title" className="text-base font-bold text-white tracking-tight">
-          {isWeekly ? `Weekly Quota Exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Daily Quota Exhausted 5 / 5'}
+          {isBatch ? 'Batch Limit Reached' : isWeekly ? `Weekly Quota Exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Daily Quota Exhausted 5 / 5'}
         </h2>
-        <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
-          Relatch is currently free and in product validation. We've capped usage per user to keep access fair.
-        </p>
-        <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
-          Your daily quota refreshes every day and your weekly quota refreshes every week.
-        </p>
-        <div className="mt-4 text-left">
+        {isBatch ? (
+          <>
+            <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
+              {message || 'This upload batch can no longer be continued.'}
+            </p>
+            <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
+              Your daily and weekly allowance is untouched.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
+              Relatch is currently free and in product validation. We've capped usage per user to keep access fair.
+            </p>
+            <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
+              Your daily quota refreshes every day and your weekly quota refreshes every week.
+            </p>
+          </>
+        )}
+        {!isBatch && <div className="mt-4 text-left">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] text-gray-500">Weekly usage</span>
             <span className="text-[11px] text-gray-400 font-mono">{weeklyCount} / {WEEKLY_LIMIT}</span>
@@ -3095,7 +3113,7 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
               style={{ width: `${weeklyPct}%`, background: weeklyPct >= 100 ? '#f59e0b' : 'linear-gradient(90deg, #3b82f6, #2563eb)' }}
             />
           </div>
-        </div>
+        </div>}
         <button
           type="button"
           onClick={onClose}
@@ -3444,9 +3462,12 @@ export default function App() {
   // link lives in App(), and needs to be able to open the same popup SkillOutput renders.
   const [showWaitlistPopup, setShowWaitlistPopup] = useState(false);
   const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
-  const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly'; weeklyCount: number } | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string } | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
-  const quotaReached = quotaInfo !== null;
+  // Only a real allowance exhaustion locks the upload zone. A spent/expired batch
+  // (session/session_expired) must NOT lock it: the allowance is untouched and the
+  // user continues by starting a new upload.
+  const quotaReached = quotaInfo !== null && (quotaInfo.limitType === 'daily' || quotaInfo.limitType === 'weekly');
   // Cross-service funnel session id, distinct from the per-upload-batch `sessionId` used
   // for quota-replay dedup below. Read once on mount from the landing page's handoff
   // (?sid= URL param) or a returning visit's localStorage copy; not regenerated per batch.
@@ -3494,7 +3515,7 @@ export default function App() {
   const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
   const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
   const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
-  const handleQuotaReached = useCallback((info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => {
+  const handleQuotaReached = useCallback((info: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string }) => {
     setQuotaInfo(info);
     setShowQuotaModal(true);
   }, []);
@@ -3627,7 +3648,7 @@ export default function App() {
   return (
     <>
     {authGateView && <AuthGate initialView={authGateView} onClose={() => setAuthGateView(null)} sessionId={rlSessionId} />}
-    {showQuotaModal && quotaInfo && <QuotaModal limitType={quotaInfo.limitType} weeklyCount={quotaInfo.weeklyCount} onClose={() => setShowQuotaModal(false)} />}
+    {showQuotaModal && quotaInfo && <QuotaModal limitType={quotaInfo.limitType} weeklyCount={quotaInfo.weeklyCount} message={quotaInfo.message} onClose={() => setShowQuotaModal(false)} />}
     <div className="min-h-screen bg-[#050a12] relative overflow-hidden">
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-blue-600/[0.06] via-blue-500/[0.02] to-transparent rounded-full blur-[100px]" />
