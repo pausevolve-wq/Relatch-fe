@@ -1661,7 +1661,7 @@ const PROCESSING_MESSAGES = [
   'Cleaning up the errors...',
 ];
 
-function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, onAnonTokenInvalid, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string }) => void; onAnonTokenInvalid: () => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
+function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, onAnonTokenInvalid, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired' | 'session_unverifiable'; weeklyCount: number; message?: string }) => void; onAnonTokenInvalid: () => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1700,7 +1700,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
     const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target, sessionId)));
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
-    let quotaInfo: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string } | null = null;
+    let quotaInfo: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired' | 'session_unverifiable'; weeklyCount: number; message?: string } | null = null;
     let anonTokenInvalid = false;
 
     results.forEach((result, i) => {
@@ -3037,7 +3037,7 @@ function ConfirmAgentPopup({ agent, onCancel, onConfirm }: {
   );
 }
 
-export function QuotaModal({ limitType, weeklyCount, message, onClose }: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string; onClose: () => void }) {
+export function QuotaModal({ limitType, weeklyCount, message, onClose }: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired' | 'session_unverifiable'; weeklyCount: number; message?: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -3055,7 +3055,7 @@ export function QuotaModal({ limitType, weeklyCount, message, onClose }: { limit
   // A spent or expired batch is NOT an allowance exhaustion: no credit was consumed,
   // so this renders its own state (server-provided message, no usage bar) instead of
   // the daily/weekly quota copy.
-  const isBatch = limitType === 'session' || limitType === 'session_expired';
+  const isBatch = limitType === 'session' || limitType === 'session_expired' || limitType === 'session_unverifiable';
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
@@ -3089,7 +3089,7 @@ export function QuotaModal({ limitType, weeklyCount, message, onClose }: { limit
               {message || 'This upload batch can no longer be continued.'}
             </p>
             <p className="text-[12px] text-gray-500 mt-1.5 leading-relaxed">
-              Your daily and weekly allowance is untouched.
+              This blocked attempt hasn't used an additional skill credit.
             </p>
           </>
         ) : (
@@ -3462,7 +3462,7 @@ export default function App() {
   // link lives in App(), and needs to be able to open the same popup SkillOutput renders.
   const [showWaitlistPopup, setShowWaitlistPopup] = useState(false);
   const [authGateView, setAuthGateView] = useState<'sign-up' | 'sign-in' | null>(null);
-  const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string } | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<{ limitType: 'daily' | 'weekly' | 'session' | 'session_expired' | 'session_unverifiable'; weeklyCount: number; message?: string } | null>(null);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   // Only a real allowance exhaustion locks the upload zone. A spent/expired batch
   // (session/session_expired) must NOT lock it: the allowance is untouched and the
@@ -3515,7 +3515,7 @@ export default function App() {
   const handleAddSample = useCallback(() => setFiles(prev => prev.length >= 3 ? prev : [...prev, makeSampleUploadedFile()]), []);
   const handleRemoveFile = useCallback((id: string) => setFiles(prev => prev.filter(f => f.id !== id)), []);
   const handleUpdateCategory = useCallback((fileId: string, category: FileCategory) => setFiles(prev => prev.map(f => f.id === fileId ? { ...f, category } : f)), []);
-  const handleQuotaReached = useCallback((info: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired'; weeklyCount: number; message?: string }) => {
+  const handleQuotaReached = useCallback((info: { limitType: 'daily' | 'weekly' | 'session' | 'session_expired' | 'session_unverifiable'; weeklyCount: number; message?: string }) => {
     setQuotaInfo(info);
     setShowQuotaModal(true);
   }, []);
