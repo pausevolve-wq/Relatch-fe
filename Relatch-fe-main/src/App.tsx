@@ -294,7 +294,9 @@ function extractTextFromHtml(html: string): string {
   return blocks.join('\n');
 }
 
-async function callOcrProxy(file: File): Promise<{ text: string; source: string; blocks?: OcrPageBlocks[] } | null> {
+// sessionId: the upload batch id from handleFiles. The backend (2026-10-23) counts a batch's OCR
+// and generation calls as ONE credit of the daily/weekly allowance only when both carry it.
+async function callOcrProxy(file: File, sessionId?: string): Promise<{ text: string; source: string; blocks?: OcrPageBlocks[] } | null> {
   if (file.size > MAX_OCR_FILE_SIZE_BYTES) return null;
   try {
     const buffer = await readAsArrayBuffer(file);
@@ -310,8 +312,22 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string;
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...(anonToken ? { 'X-Anon-Token': anonToken } : {}),
       },
-      body: JSON.stringify({ base64, mimeType, fileName: file.name }),
+      body: JSON.stringify({ base64, mimeType, fileName: file.name, ...(sessionId ? { sessionId } : {}) }),
     });
+
+    // Daily/weekly allowance used up: surface it exactly like enrichWithAI's 429 so handleFiles
+    // shows the QuotaModal, instead of the misleading "PDF may be encrypted or corrupted" warning
+    // a silent null used to produce for scanned PDFs.
+    if (response.status === 429) {
+      const errData = await response.json().catch(() => ({}));
+      if (errData.error === 'QUOTA_REACHED') {
+        const quotaErr = new Error('QUOTA_REACHED');
+        (quotaErr as any).isQuotaError = true;
+        (quotaErr as any).limitType = errData.limitType === 'weekly' ? 'weekly' : 'daily';
+        (quotaErr as any).weeklyCount = errData.weeklyCount ?? 0;
+        throw quotaErr;
+      }
+    }
 
     if (!response.ok) {
       return null;
@@ -325,6 +341,8 @@ async function callOcrProxy(file: File): Promise<{ text: string; source: string;
 
     return null;
   } catch (err) {
+    // Quota errors must bubble up to handleFiles - same rule as enrichWithAI.
+    if ((err as any)?.isQuotaError) throw err;
     return null;
   }
 }
@@ -352,7 +370,7 @@ function isPdfTextWeak(text: string, numPages: number): boolean {
   return [isSparse, isFragmentDominated, isProseLess].filter(Boolean).length >= 2;
 }
 
-async function extractPdfText(file: File): Promise<ExtractedTextResult> {
+async function extractPdfText(file: File, sessionId?: string): Promise<ExtractedTextResult> {
   const warnings: string[] = [];
   let pdfjsText = '';
   let numPages = 1;
@@ -379,7 +397,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   }
 
   if (pdfjsText.length < 50) {
-    const ocrResult = await callOcrProxy(file);
+    const ocrResult = await callOcrProxy(file, sessionId);
     if (ocrResult) {
       warnings.push(`Extracted via OCR — accuracy may vary on scans.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
@@ -397,7 +415,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
 
   // Confidence heuristic: escalate to OCR for diagram-heavy / text-sparse PDFs
   if (isPdfTextWeak(pdfjsText, numPages)) {
-    const ocrResult = await callOcrProxy(file);
+    const ocrResult = await callOcrProxy(file, sessionId);
     if (ocrResult && ocrResult.text.length > pdfjsText.length * 0.8) {
       warnings.push(`Enhanced via OCR.`);
       return { type: 'pdf', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
@@ -408,7 +426,7 @@ async function extractPdfText(file: File): Promise<ExtractedTextResult> {
   return { type: 'pdf', text: pdfjsText, warnings };
 }
 
-async function extractDocxText(file: File): Promise<ExtractedTextResult> {
+async function extractDocxText(file: File, sessionId?: string): Promise<ExtractedTextResult> {
   const warnings: string[] = [];
   try {
     const buffer = await readAsArrayBuffer(file);
@@ -444,7 +462,7 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
     } catch {
     }
 
-    const ocrResult = await callOcrProxy(file);
+    const ocrResult = await callOcrProxy(file, sessionId);
     if (ocrResult) {
       warnings.push(`Extracted via OCR.`);
       return { type: 'docx', text: ocrResult.text, warnings, blocks: ocrResult.blocks };
@@ -459,9 +477,9 @@ async function extractDocxText(file: File): Promise<ExtractedTextResult> {
   return { type: 'docx', text: fallback, warnings };
 }
 
-async function extractText(file: File, type: NormalizedFileType): Promise<ExtractedTextResult> {
-  if (type === 'pdf') return extractPdfText(file);
-  if (type === 'docx') return extractDocxText(file);
+async function extractText(file: File, type: NormalizedFileType, sessionId?: string): Promise<ExtractedTextResult> {
+  if (type === 'pdf') return extractPdfText(file, sessionId);
+  if (type === 'docx') return extractDocxText(file, sessionId);
   if (type === 'html') {
     const raw = await readAsText(file);
     return { type, text: normalizeExtractedText(extractTextFromHtml(raw)), warnings: [] };
@@ -1485,7 +1503,7 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
 
   const type = detectFileType(file);
-  const extracted = await extractText(file, type);
+  const extracted = await extractText(file, type, sessionId);
 
   if (file.size <= 0) throw new Error('Invalid buffer size (0 bytes).');
 
