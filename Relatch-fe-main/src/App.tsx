@@ -1535,10 +1535,14 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
   // more. Claude target only: Codex text is distilled to the cap and was not studied, so it keeps
   // profile.charCap. Small documents are already read whole. The backend accepts at most this
   // (SERVER_CHAR_CAP in relatch api/enrich.js), so raising it there alone changes nothing.
-  const charCap = target === 'claude' && profile.sizeClass !== 'small' ? profile.charCap * 2 : profile.charCap;
+  // 2026-10-24 (input limits, vault "Relatch Input Limits - Safe Ceilings per Template"): Codex now
+  // reads 2x too (10000 medium / 16000 large, distilled). Blind-judged on 13 docs, production env:
+  // W5 / T7 / L1, every rubric dimension +1.0 (at 1x the trimmed text misled domain detection on a
+  // marketing FAQ). The backend already accepts 2x (SERVER_CHAR_CAP), so this file alone ships it.
+  const charCap = profile.sizeClass !== 'small' ? profile.charCap * 2 : profile.charCap;
 
   const textForEnrichment = target === 'codex'
-    ? distillForCodex(extracted.text, profile.charCap)
+    ? distillForCodex(extracted.text, charCap)
     : profile.sizeClass === 'large'
       ? sampleLargeDocument(extracted.text, charCap)
       : extracted.text;
