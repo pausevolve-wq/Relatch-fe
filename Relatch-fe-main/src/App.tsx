@@ -499,7 +499,7 @@ const SKILL_DOMAINS = [
     role: 'a direct-response email copywriter',
     outputType: 'emails, sequences, and outreach campaigns',
     frame: 'write emails that get opened, read, and replied to',
-    keywords: /\b(subject.?line|open.?rate|click.?through|drip|sequence|outreach|followup|follow.?up|prospect|cold.?email|reply.?rate|unsubscribe|deliverability|broadcast|nurture|autoresponder|opt.?in|inbox|sender|preview.?text)\b/i,
+    keywords: /\b(subject.?line|open.?rate|click.?through|drip|cold.?email|reply.?rate|unsubscribe|deliverability|nurture|autoresponder|opt.?in|inbox|preview.?text)\b/i,
     template: 'A' as const,
     richFormats: ['examples'],
   },
@@ -519,7 +519,7 @@ const SKILL_DOMAINS = [
     role: 'a senior software engineer',
     outputType: 'code, architecture decisions, and technical documentation',
     frame: 'write clean, maintainable, production-ready code',
-    keywords: /\b(function|async.?await|interface|component|props|useState|useEffect|endpoint|refactor|deploy|ci.?cd|unit.?test|lint|compile|algorithm|big.?o|typescript|javascript|python|react|node|kubernetes|docker|microservice)\b/i,
+    keywords: /\b(function|async.?await|props|useState|useEffect|endpoint|refactor|deploy|unit.?test|lint|compile|algorithm|big.?o|typescript|javascript|python|react|node|kubernetes|docker|microservice)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'table', 'flowchart'],
   },
@@ -529,7 +529,7 @@ const SKILL_DOMAINS = [
     role: 'a growth-focused performance marketer',
     outputType: 'growth strategies, paid campaigns, and conversion systems',
     frame: 'drive measurable growth through data-informed marketing decisions',
-    keywords: /\b(acquisition|retention|churn.?rate|ltv|cac|roas|a.?b.?test|landing.?page|paid.?ads|ppc|cpc|cpm|attribution|cohort|activation|referral.?program|viral.?loop|growth.?lever|north.?star.?metric|activation.?rate)\b/i,
+    keywords: /\b(churn.?rate|ltv|cac|roas|a.?b.?test|landing.?page|paid.?ads|ppc|cpc|cpm|attribution|cohort|referral.?program|viral.?loop|growth.?lever|north.?star.?metric|activation.?rate)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'execute' as const,
@@ -540,7 +540,7 @@ const SKILL_DOMAINS = [
     role: 'a product designer and UX specialist',
     outputType: 'design decisions, UX flows, and interface copy',
     frame: 'create intuitive, accessible user experiences grounded in research',
-    keywords: /\b(wireframe|prototype|usability.?test|heuristic|user.?journey|figma|sketch|affordance|interaction.?design|friction|empty.?state|microcopy|onboarding.?flow|accessibility|wcag|design.?system|component.?library|modal|tooltip)\b/i,
+    keywords: /\b(wireframe|usability.?test|heuristic|user.?journey|figma|sketch|affordance|interaction.?design|friction|empty.?state|microcopy|onboarding.?flow|accessibility|wcag|design.?system|component.?library|modal|tooltip)\b/i,
     template: 'C' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'expertise' as const,
@@ -551,7 +551,7 @@ const SKILL_DOMAINS = [
     role: 'an instructional designer and educator',
     outputType: 'curricula, lesson plans, and learning materials',
     frame: 'design learning experiences that produce measurable skill change',
-    keywords: /\b(learning.?objective|curriculum|lesson.?plan|instructional|assessment|rubric|scaffold|pedagogy|student.?engagement|course.?design|syllabus|bloom.?taxonomy|formative|summative|differentiat|learning.?outcome|e.?learning)\b/i,
+    keywords: /\b(learning.?objective|curriculum|lesson.?plan|instructional|rubric|scaffold|pedagogy|student.?engagement|course.?design|syllabus|bloom.?taxonomy|formative|summative|differentiat|learning.?outcome|e.?learning)\b/i,
     template: 'C' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -561,7 +561,7 @@ const SKILL_DOMAINS = [
     role: 'a legal professional',
     outputType: 'contracts, policies, and compliance documentation',
     frame: 'draft precise, enforceable language that protects all parties',
-    keywords: /\b(clause|liability|indemnif|jurisdiction|termination|breach.?of|obligations|warranties|representation|consideration|contract|statute|regulation|compliance|gdpr|hipaa|counsel|attorney|whereas|hereinafter|pursuant)\b/i,
+    keywords: /\b(clause|liability|indemnif|jurisdiction|breach.?of|obligations|warranties|statute|regulation|compliance|gdpr|hipaa|attorney|hereinafter|pursuant)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -571,7 +571,19 @@ const SKILL_DOMAINS = [
     role: 'a financial analyst',
     outputType: 'financial models, analysis, and investment recommendations',
     frame: 'produce rigorous financial analysis that supports sound decisions',
-    keywords: /\b(ebitda|ebit|cash.?flow|free.?cash.?flow|balance.?sheet|income.?statement|trial.?balance|gross.?margin|operating.?margin|net.?margin|amortization|depreciation|accrual|ledger|debit|credit|gaap|ifrs|wacc|dcf|npv|irr|eps|valuation|dividend|equity|debt|liability|fiscal.?year|fiscal.?quarter|hedge|derivative|bond.?yield|capex|opex|working.?capital|return.?on.?equity|return.?on.?assets|leverage.?ratio|debt.?to.?equity|interest.?rate|principal|maturity|coupon|underwriting|portfolio.?allocation|annual.?report|quarterly.?report|earnings.?call|earnings.?per.?share|book.?value|market.?cap)\b/i,
+    keywords: /\b(ebitda|ebit|cash.?flow|free.?cash.?flow|balance.?sheet|income.?statement|trial.?balance|gross.?margin|operating.?margin|net.?margin|amortization|depreciation|accrual|ledger|debit|credit|gaap|ifrs|wacc|dcf|npv|irr|eps|valuation|dividend|equity|debt|fiscal.?year|fiscal.?quarter|hedge|derivative|bond.?yield|capex|opex|working.?capital|return.?on.?equity|return.?on.?assets|leverage.?ratio|debt.?to.?equity|interest.?rate|principal|coupon|underwriting|portfolio.?allocation|annual.?report|quarterly.?report|earnings.?call|earnings.?per.?share|book.?value|market.?cap)\b/i,
+    template: 'D' as const,
+    richFormats: ['table', 'flowchart'],
+  },
+  // 2026-10-24 (domain detection: server decides): economics existed only on the server (Jev),
+  // so economics documents were labelled finance or nothing here. Same strings as the server.
+  {
+    id: 'economics',
+    label: 'economics & policy analysis',
+    role: 'an economist',
+    outputType: 'economic analysis, model explanations, and policy briefs',
+    frame: 'explain economic mechanisms, models and evidence precisely, with their assumptions and uncertainty',
+    keywords: /\b(inflation|deflation|stagflation|monetary.?policy|fiscal.?policy|central.?bank|interest.?rate|gdp|gross.?domestic.?product|unemployment.?rate|phillips.?curve|aggregate.?demand|aggregate.?supply|recession|macroeconomic|microeconomic|elasticity|fiscal.?multiplier|okun|taylor.?rule|output.?gap|money.?supply|quantitative.?easing|consumer.?price.?index|labou?r.?market|nairu|keynesian|monetarist|business.?cycle)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -581,7 +593,7 @@ const SKILL_DOMAINS = [
     role: 'an SEO strategist',
     outputType: 'SEO strategies, content briefs, and optimized copy',
     frame: 'create content and strategies that earn search visibility and organic traffic',
-    keywords: /\b(keyword.?research|search.?ranking|backlink|serp|meta.?description|title.?tag|canonical|crawl.?budget|index|schema.?markup|anchor.?text|domain.?authority|search.?intent|topical.?authority|content.?cluster|featured.?snippet|core.?web.?vital)\b/i,
+    keywords: /\b(keyword.?research|search.?ranking|backlink|serp|meta.?description|title.?tag|crawl.?budget|schema.?markup|anchor.?text|domain.?authority|search.?intent|topical.?authority|content.?cluster|featured.?snippet|core.?web.?vital)\b/i,
     template: 'D' as const,
     richFormats: ['table'],
     codexShape: 'execute' as const,
@@ -592,7 +604,7 @@ const SKILL_DOMAINS = [
     role: 'an HR and people operations specialist',
     outputType: 'HR policies, job descriptions, and people communications',
     frame: 'build people systems that attract, develop, and retain talent',
-    keywords: /\b(onboarding|performance.?review|compensation.?band|benefits|pto|termination|employee.?handbook|headcount|talent.?acquisition|leveling|pip|career.?ladder|comp|total.?rewards|people.?ops|culture.?add|hiring.?manager|offer.?letter)\b/i,
+    keywords: /\b(onboarding|performance.?review|compensation.?band|pto|employee.?handbook|headcount|talent.?acquisition|leveling|pip|career.?ladder|comp|total.?rewards|people.?ops|culture.?add|hiring.?manager|offer.?letter)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -602,7 +614,7 @@ const SKILL_DOMAINS = [
     role: 'a data scientist and ML engineer',
     outputType: 'models, analyses, and data-driven recommendations',
     frame: 'extract signal from data and build systems that learn and improve',
-    keywords: /\b(dataframe|pandas|numpy|sklearn|train.?test|accuracy|precision.?recall|feature.?engineering|regression|neural.?network|embedding|inference|dataset|etl|sql.?query|data.?warehouse|feature.?store|model.?drift|overfitting)\b/i,
+    keywords: /\b(dataframe|pandas|numpy|sklearn|train.?test|precision.?recall|feature.?engineering|regression|neural.?network|embedding|inference|dataset|etl|sql.?query|data.?warehouse|feature.?store|model.?drift|overfitting)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'table', 'flowchart'],
   },
@@ -612,7 +624,7 @@ const SKILL_DOMAINS = [
     role: 'a product manager',
     outputType: 'PRDs, roadmaps, and product strategy documents',
     frame: 'define and ship products that solve real user problems at scale',
-    keywords: /\b(product.?requirement|user.?story|acceptance.?criteria|sprint.?planning|epic|product.?backlog|roadmap.?item|north.?star|success.?metric|discovery|product.?hypothesis|go.?to.?market|launch.?plan|prd|feature.?flag|experiment)\b/i,
+    keywords: /\b(product.?requirement|user.?story|acceptance.?criteria|sprint.?planning|epic|product.?backlog|roadmap.?item|north.?star|success.?metric|product.?hypothesis|go.?to.?market|launch.?plan|prd|feature.?flag)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'expertise' as const,
@@ -633,7 +645,7 @@ const SKILL_DOMAINS = [
     role: 'a management consultant',
     outputType: 'frameworks, decks, and strategic recommendations',
     frame: 'structure ambiguous problems and deliver clear, actionable recommendations',
-    keywords: /\b(mece|issue.?tree|so.?what|pyramid.?principle|workstream|deliverable|engagement.?manager|hypothesis.?driven|executive.?summary|straw.?man|benchmarking|best.?practice|operating.?model|change.?management|transformation)\b/i,
+    keywords: /\b(mece|issue.?tree|so.?what|pyramid.?principle|workstream|deliverable|engagement.?manager|hypothesis.?driven|executive.?summary|straw.?man|operating.?model|change.?management)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'expertise' as const,
@@ -644,7 +656,7 @@ const SKILL_DOMAINS = [
     role: 'a cybersecurity specialist',
     outputType: 'security assessments, policies, and technical documentation',
     frame: 'identify, assess, and mitigate security risks systematically',
-    keywords: /\b(vulnerability|cve|exploit|penetration.?test|pen.?test|firewall|encryption|ssl|tls|oauth|authentication|authorization|owasp|threat.?model|attack.?vector|incident.?response|soc|siem|zero.?trust|hardening|red.?team)\b/i,
+    keywords: /\b(vulnerability|cve|exploit|penetration.?test|pen.?test|firewall|encryption|oauth|owasp|threat.?model|attack.?vector|incident.?response|soc|siem|zero.?trust|hardening|red.?team)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -654,7 +666,7 @@ const SKILL_DOMAINS = [
     role: 'a social media strategist and content creator',
     outputType: 'social content, captions, and community strategies',
     frame: 'create social content that builds community and drives engagement',
-    keywords: /\b(instagram|tiktok|linkedin.?post|twitter|youtube|hashtag|caption|reel|carousel|content.?calendar|ugc|creator.?economy|influencer|viral.?content|community.?management|engagement.?rate)\b/i,
+    keywords: /\b(instagram|tiktok|linkedin.?post|hashtag|caption|reel|carousel|content.?calendar|ugc|creator.?economy|influencer|viral.?content|community.?management|engagement.?rate)\b/i,
     template: 'A' as const,
     richFormats: ['examples'],
   },
@@ -664,7 +676,7 @@ const SKILL_DOMAINS = [
     role: 'a healthcare professional',
     outputType: 'clinical documentation, patient communications, and protocols',
     frame: 'communicate clinical information clearly, accurately, and compassionately',
-    keywords: /\b(patient|diagnosis|treatment.?protocol|medication|dosage|symptom|clinical.?trial|contraindication|prognosis|evidence.?based|ehr|icd.?code|cpt.?code|hipaa|care.?plan|referral|triage|differential|comorbidity)\b/i,
+    keywords: /\b(patient|diagnosis|treatment.?protocol|medication|dosage|symptom|clinical.?trial|contraindication|prognosis|evidence.?based|ehr|icd.?code|cpt.?code|hipaa|care.?plan|triage|differential|comorbidity)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
   },
@@ -674,7 +686,7 @@ const SKILL_DOMAINS = [
     role: 'an academic researcher and writer',
     outputType: 'research papers, literature reviews, and academic analyses',
     frame: 'produce rigorous, well-cited academic work that advances knowledge',
-    keywords: /\b(hypothesis|research.?methodology|sample.?size|statistical.?significance|p.?value|literature.?review|peer.?review|citation|abstract|dissertation|thesis|empirical|independent.?variable|control.?group|replication|apa|mla|chicago)\b/i,
+    keywords: /\b(hypothesis|research.?methodology|sample.?size|statistical.?significance|p.?value|literature.?review|peer.?review|citation|dissertation|thesis|independent.?variable|control.?group|replication|apa|mla)\b/i,
     template: 'D' as const,
     richFormats: ['table'],
     codexShape: 'expertise' as const,
@@ -685,7 +697,7 @@ const SKILL_DOMAINS = [
     role: 'a real estate professional',
     outputType: 'listings, client communications, and property analyses',
     frame: 'communicate property value and guide clients through complex transactions',
-    keywords: /\b(listing|property|mortgage|appraisal|comparable|comps|escrow|title.?deed|zoning|commission|closing.?cost|inspection|mls|cap.?rate|noi|lease.?agreement|tenant|landlord|arv|cash.?on.?cash)\b/i,
+    keywords: /\b(property|mortgage|appraisal|comparable|comps|escrow|title.?deed|zoning|closing.?cost|mls|cap.?rate|noi|lease.?agreement|tenant|landlord|arv|cash.?on.?cash)\b/i,
     template: 'D' as const,
     richFormats: ['table'],
   },
@@ -695,7 +707,7 @@ const SKILL_DOMAINS = [
     role: 'a creative writer and storyteller',
     outputType: 'stories, scripts, copy, and narrative content',
     frame: 'craft narratives that move people and stay with them',
-    keywords: /\b(protagonist|antagonist|plot.?arc|dialogue|scene.?setting|chapter|theme|motif|narrative.?structure|prose.?style|stanza|verse|character.?development|conflict|resolution|pacing|show.?don.?t.?tell|point.?of.?view|unreliable.?narrator)\b/i,
+    keywords: /\b(protagonist|antagonist|plot.?arc|dialogue|scene.?setting|motif|narrative.?structure|prose.?style|stanza|verse|character.?development|pacing|show.?don.?t.?tell|point.?of.?view|unreliable.?narrator)\b/i,
     template: 'A' as const,
     richFormats: ['examples'],
   },
@@ -705,7 +717,7 @@ const SKILL_DOMAINS = [
     role: 'a direct-response copywriter',
     outputType: 'sales pages, ads, and persuasive copy',
     frame: 'write copy that earns attention and drives action',
-    keywords: /\b(hook|headline|sub.?headline|call.?to.?action|cta|swipe.?file|swipe|lede|big.?idea|conversion.?copy|persuasion|objection|pain.?point|open.?loop|sales.?page|sales.?letter|landing.?page.?copy|vsl|long.?form.?copy|copywriting|copywriter|direct.?response|aida|pas|fab|features.?benefits|benefit.?driven|emotional.?appeal|urgency|scarcity|social.?proof|testimonial|guarantee|risk.?reversal|offer.?stack|fascination|curiosity.?gap|reason.?why|power.?word|postscript|sales.?hook|click.?bait|conversion.?rate.?optimization|cro.?copy)\b/i,
+    keywords: /\b(headline|sub.?headline|call.?to.?action|cta|swipe.?file|swipe|lede|big.?idea|conversion.?copy|persuasion|open.?loop|sales.?page|sales.?letter|landing.?page.?copy|vsl|long.?form.?copy|copywriting|copywriter|direct.?response|aida|pas|fab|features.?benefits|benefit.?driven|emotional.?appeal|scarcity|social.?proof|testimonial|risk.?reversal|offer.?stack|fascination|curiosity.?gap|reason.?why|power.?word|postscript|sales.?hook|click.?bait|conversion.?rate.?optimization|cro.?copy)\b/i,
     template: 'A' as const,
     richFormats: ['examples'],
   },
@@ -775,6 +787,10 @@ const CODEX_DOMAIN_SUPPLEMENTS: Record<string, CodexDomainSupplement> = {
     codexRole: 'a financial model executor and report generator operating within defined formula conventions and compliance boundaries',
     codexFrame: 'build and validate financial models, generate structured reports from templates, and escalate valuation assumptions and interpretive decisions for human review',
     codexKeywordsExtra: /\b(model\.?template|formula|spreadsheet|financial\.?model|forecast\.?template|variance\.?analysis|budget\.?vs\.?actual)\b/i,
+  },
+  economics: {
+    codexRole: 'an economic analysis executor applying the models, definitions and data conventions stated in the source - refuses forecasts or policy advice the source does not support',
+    codexFrame: 'apply the source\'s economic models and definitions exactly, state assumptions, units and periods, and escalate interpretive or policy judgments for human review',
   },
   seo: {
     codexRole: 'an SEO task executor implementing meta tags, content briefs, technical SEO fixes, internal linking structures, and schema markup',
@@ -855,7 +871,7 @@ const CODEX_NATIVE_DOMAINS = [
     role: 'a DevOps engineer executing infrastructure automation and deployment tasks within defined safety rails and rollback criteria',
     outputType: 'infrastructure configs, deployment scripts, and operational runbooks',
     frame: 'automate, deploy, and validate infrastructure changes - verify each step before proceeding, maintain rollback readiness at every stage',
-    keywords: /\b(terraform|kubernetes|k8s|helm|docker|ci\.?cd|pipeline|deploy|rollback|infra|pod|node|cluster|ingress|nginx|github\.?action|jenkins|ansible|cloudformation|vpc|subnet|iam|s3|ecr|ecs|eks|gke|aks|argocd|flux|gitops|slo|sli|runbook|incident|escalation|dockerfile|docker\.?compose|service\.?mesh|istio|envoy)\b/i,
+    keywords: /\b(terraform|kubernetes|k8s|helm|docker|ci\.?cd|deploy|rollback|infra|pod|cluster|ingress|nginx|github\.?action|jenkins|ansible|cloudformation|vpc|subnet|iam|s3|ecr|ecs|eks|gke|aks|argocd|flux|gitops|slo|sli|runbook|incident|escalation|dockerfile|docker\.?compose|service\.?mesh|istio|envoy)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'flowchart'],
     codexShape: 'execute' as const,
@@ -866,7 +882,7 @@ const CODEX_NATIVE_DOMAINS = [
     role: 'a QA engineer executing test suite implementations, fixture setups, mock configurations, and coverage validation workflows',
     outputType: 'test suites, fixture configurations, mock setups, and coverage reports',
     frame: 'implement tests against defined coverage targets and patterns - set up fixtures and mocks, validate boundary conditions, and verify before merging',
-    keywords: /\b(unit\.?test|integration\.?test|e2e|end\.?to\.?end|test\.?suite|fixture|mock|stub|spy|assertion|coverage|jest|vitest|pytest|mocha|cypress|playwright|selenium|test\.?driven|tdd|bdd|given\.?when\.?then|snapshot|regression|smoke\.?test|load\.?test|performance\.?test|test\.?data|factory|faker|seeding|test\.?runner|beforeEach|afterEach)\b/i,
+    keywords: /\b(unit\.?test|integration\.?test|e2e|end\.?to\.?end|test\.?suite|fixture|mock|stub|spy|assertion|jest|vitest|pytest|mocha|cypress|playwright|selenium|test\.?driven|tdd|bdd|given\.?when\.?then|snapshot|smoke\.?test|load\.?test|performance\.?test|test\.?data|faker|seeding|test\.?runner|beforeEach|afterEach)\b/i,
     template: 'B' as const,
     richFormats: ['codeblock', 'table'],
     codexShape: 'execute' as const,
@@ -877,7 +893,7 @@ const CODEX_NATIVE_DOMAINS = [
     role: 'a database engineer executing schema migrations and query optimizations within defined safety boundaries - escalates destructive or high-risk operations',
     outputType: 'schema migrations, query optimizations, index strategies, and data model documentation',
     frame: 'design and execute database changes safely - validate before applying, maintain rollback scripts, and escalate any operation that cannot be reversed or affects production data',
-    keywords: /\b(migration|schema|index|query\.?optimization|foreign\.?key|constraint|transaction|deadlock|replication|sharding|partition|stored\.?procedure|trigger|view|materialized|postgres|mysql|mongodb|redis|cassandra|dynamodb|supabase|prisma|alembic|flyway|liquibase|orm|explain\.?plan|query\.?plan|rollback\.?migration|seed\.?data|database\.?design|erd|entity\.?relationship)\b/i,
+    keywords: /\b(schema|query\.?optimization|foreign\.?key|constraint|deadlock|replication|sharding|partition|stored\.?procedure|materialized|postgres|mysql|mongodb|redis|cassandra|dynamodb|supabase|prisma|alembic|flyway|liquibase|orm|explain\.?plan|query\.?plan|rollback\.?migration|seed\.?data|database\.?design|erd|entity\.?relationship)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'specialist' as const,
@@ -888,7 +904,7 @@ const CODEX_NATIVE_DOMAINS = [
     role: 'an API design reviewer operating within defined contract standards and versioning constraints - flags breaking changes and enforces error-response conventions',
     outputType: 'API specs, endpoint documentation, integration guides, and contract validation reports',
     frame: 'validate API contracts against OpenAPI standards and internal conventions, enforce versioning discipline, flag breaking changes before shipping, and refuse spec additions that violate defined contract boundaries',
-    keywords: /\b(endpoint|endpoints|restful|crud|payload|openapi|swagger|rest|graphql|grpc|webhook|rate\.?limit|authentication|authorization|oauth|jwt|api\.?key|versioning|breaking\.?change|idempotent|pagination|cursor|response\.?code|status\.?code|contract|schema\.?validation|json\.?schema|content\.?type|api\.?first|consumer\.?driven|api\.?gateway|graphql\.?schema|resolver)\b/i,
+    keywords: /\b(endpoint|endpoints|restful|crud|payload|openapi|swagger|graphql|grpc|webhook|rate\.?limit|authentication|authorization|oauth|jwt|api\.?key|versioning|breaking\.?change|idempotent|pagination|cursor|response\.?code|status\.?code|schema\.?validation|json\.?schema|content\.?type|api\.?first|consumer\.?driven|api\.?gateway|graphql\.?schema|resolver)\b/i,
     template: 'D' as const,
     richFormats: ['table', 'flowchart'],
     codexShape: 'specialist' as const,
@@ -945,16 +961,30 @@ function detectSkillDomain(fileName: string, text: string, target: 'claude' | 'c
     const extraKeywords: RegExp | null = (target === 'codex' && supplement?.codexKeywordsExtra)
       ? supplement.codexKeywordsExtra
       : null;
-    const rawCount =
-      (combined.match(new RegExp(baseKeywords.source, 'gi')) || []).length +
-      (extraKeywords ? (combined.match(new RegExp(extraKeywords.source, 'gi')) || []).length : 0);
+    const matches = [
+      ...(combined.match(new RegExp(baseKeywords.source, 'gi')) || []),
+      ...(extraKeywords ? (combined.match(new RegExp(extraKeywords.source, 'gi')) || []) : []),
+    ];
+    const rawCount = matches.length;
+    const distinct = new Set(matches.map(m => m.toLowerCase())).size;
     const density = (rawCount * 1000) / wordCount;
-    return { domain: d, score: rawCount, density };
+    return { domain: d, score: rawCount, distinct, density };
   }).filter(r => r.score > 0).sort((a, b) => b.density - a.density);
 
+  // 2026-10-24 (vault "Relatch Domain Detection - Server Decides"): this label is now only a
+  // HINT - the server (Jev, reading the whole document) decides, and replaces a label it is sure
+  // is wrong or that it cannot confirm. So the hint must be precise rather than eager: it names a
+  // field only when at least 2 DIFFERENT keywords matched (one word repeated is not evidence) and
+  // the top field clearly beats the runner-up (1.5x its density). Otherwise null, i.e. "general
+  // professional", which the server can still correct. Measured on 104 labelled documents
+  // (jev-harness/keyword-accuracy.js, held-out half): precision 76% -> 93% (Claude), 77% -> 96%
+  // (Codex). Generic everyday words that pointed at the wrong field were removed from the lists.
   const MIN_RAW = 3;
   const MIN_DENSITY = 1.5;
-  if (scores.length > 0 && scores[0].score >= MIN_RAW && scores[0].density >= MIN_DENSITY) {
+  const MIN_DISTINCT = 2;
+  const MIN_MARGIN = 1.5;
+  if (scores.length > 0 && scores[0].score >= MIN_RAW && scores[0].density >= MIN_DENSITY
+    && scores[0].distinct >= MIN_DISTINCT && (scores.length < 2 || scores[0].density >= MIN_MARGIN * scores[1].density)) {
     return scores[0].domain;
   }
   return null;
@@ -1039,7 +1069,7 @@ function profileDocument(file: File, extractedText: string, extractionWarning?: 
   const detected = detectSkillDomain(file.name, extractedText);
   const domainDTemplates = ['finance', 'legal', 'hr_people', 'consulting', 'product_management',
     'security', 'healthcare', 'academic_research', 'real_estate', 'seo', 'growth_marketing',
-    'data_science', 'pr_communications'];
+    'data_science', 'pr_communications', 'economics'];
   if (detected && domainDTemplates.includes(detected.id)) {
     // Finance CSVs that passed the word-count gate above land here - intercept before D.
     // Any CSV flagged as finance (even with 100+ words) belongs in Template E, not D.
