@@ -1535,7 +1535,10 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
   // more. Claude target only: Codex text is distilled to the cap and was not studied, so it keeps
   // profile.charCap. Small documents are already read whole. The backend accepts at most this
   // (SERVER_CHAR_CAP in relatch api/enrich.js), so raising it there alone changes nothing.
-  const charCap = target === 'claude' && profile.sizeClass !== 'small' ? profile.charCap * 2 : profile.charCap;
+  // 2026-10-24 (domain templates plan, Step C): 4x on the Claude target (medium 20000, large a
+  // 32000-char sample). On the 24-doc domain corpus 4x lifted coverage 5.1 -> 6.7 vs 2x (W20/T2/L2)
+  // with no added latency; the backend's SERVER_CHAR_CAP was raised to match in the same change.
+  const charCap = target === 'claude' && profile.sizeClass !== 'small' ? profile.charCap * 4 : profile.charCap;
 
   const textForEnrichment = target === 'codex'
     ? distillForCodex(extracted.text, profile.charCap)
