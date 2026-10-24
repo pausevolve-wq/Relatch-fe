@@ -1539,7 +1539,11 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
   // reads 2x too (10000 medium / 16000 large, distilled). Blind-judged on 13 docs, production env:
   // W5 / T7 / L1, every rubric dimension +1.0 (at 1x the trimmed text misled domain detection on a
   // marketing FAQ). The backend already accepts 2x (SERVER_CHAR_CAP), so this file alone ships it.
-  const charCap = profile.sizeClass !== 'small' ? profile.charCap * 2 : profile.charCap;
+  // 2026-10-24 (domain templates F-K, large documents): Claude large documents are sampled at 4x
+  // (32000). The backend rebuilds the 2x (16000) sample from it byte for byte for every template
+  // except F-K, which read the whole 32000 sample (relatch api/enrich.js shrinkLargeSample, keyed
+  // on charCap === 32000). Medium stays 2x. Ship the backend change first.
+  const charCap = profile.sizeClass === 'small' ? profile.charCap : profile.charCap * (target === 'claude' && profile.sizeClass === 'large' ? 4 : 2);
 
   const textForEnrichment = target === 'codex'
     ? distillForCodex(extracted.text, charCap)
