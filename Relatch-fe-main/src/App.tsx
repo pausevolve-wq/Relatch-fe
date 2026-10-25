@@ -1386,7 +1386,7 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<string | { content: string; degraded: boolean }> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string, fullText?: string): Promise<string | { content: string; degraded: boolean }> {
   // Funnel session id (landing→app→backend), read directly from localStorage since this
   // is a module-level function outside the component tree — distinct from the `sessionId`
   // parameter above, which is the per-upload-batch quota-replay-dedup id sent to the backend.
@@ -1463,6 +1463,10 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
         target,
         ...(codexShape ? { codexShape } : {}),
         ...(sessionId ? { sessionId } : {}),
+        // 2026-10-25 (Codex DELIVERABLE auto-detection): the whole document for Codex, next to the
+        // distilled rawText. The backend asks Jev whether it is a document to produce again and, if
+        // so, writes a DELIVERABLE skill from this text. Otherwise rawText is used exactly as before.
+        ...(target === 'codex' && fullText ? { fullText } : {}),
       }),
     });
 
@@ -1593,7 +1597,12 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     charCap,
     profile.sizeClass,
     target,
-    sessionId
+    sessionId,
+    // 2026-10-25: Codex also gets the whole document (up to the backend's 20000 medium / a 32000
+    // start-middle-end sample for large), for DELIVERABLE auto-detection. Claude: undefined.
+    target === 'codex'
+      ? (extracted.text.length <= (profile.sizeClass === 'large' ? 32000 : 20000) ? extracted.text : sampleLargeDocument(extracted.text, profile.sizeClass === 'large' ? 32000 : 20000))
+      : undefined
   );
   const content = typeof enrichResult === 'string' ? enrichResult : (enrichResult as any).content;
   const isDegraded = typeof enrichResult !== 'string' && (enrichResult as any).degraded === true;
