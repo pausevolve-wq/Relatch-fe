@@ -1172,6 +1172,38 @@ function formatCodexDisplayName(name: string): string {
     .replace(/"/g, '\\"');
 }
 
+// 2026-10-25: agents/openai.yaml text, shaped like OpenAI's own skills ("Capture conversations into
+// structured Notion pages"; default_prompt "Capture this conversation into structured Notion pages
+// with decisions, action items, and owners when known."). short_description is cut at a word
+// boundary - never mid-word, no "..." (it used to end "following exact te..."). default_prompt is the
+// description's first sentence, which the backend now starts with an imperative verb.
+const CODEX_TRAILING_STOPWORD = /^(and|or|for|the|to|with|of|a|an|in|on|by|from|following|including)$/i;
+function codexFirstSentence(desc: string): string {
+  return (desc.match(/^[^.!?]+[.!?]?/)?.[0] || desc).trim();
+}
+function codexShortDescription(desc: string): string {
+  const s = codexFirstSentence(desc).replace(/[.!?]$/, '');
+  if (s.length <= 100) return s;
+  // Prefer the last phrase break inside 40-100 chars: a dash, or the word before a connector
+  // ("... for board members and angel investors| following exact template ..."). Not commas:
+  // they are usually list separators ("reporting, investigation, and remediation").
+  let cut = -1;
+  for (const m of s.matchAll(/ - | (?=(?:following|for|with|by|from|including|using|under|across|when|while|so that|to)\s)/g)) {
+    if (m.index !== undefined && m.index >= 40 && m.index <= 100) cut = m.index;
+  }
+  if (cut > 0) return s.slice(0, cut).trim();
+  const words = s.slice(0, s.lastIndexOf(' ', 100)).split(' ');
+  while (words.length > 1 && CODEX_TRAILING_STOPWORD.test(words[words.length - 1])) words.pop();
+  return words.join(' ').replace(/[,;:]$/, '');
+}
+function codexDefaultPrompt(desc: string): string {
+  const s = codexFirstSentence(desc);
+  return s.length <= 240 ? s : `${s.slice(0, s.lastIndexOf(' ', 237)).replace(/[,;:]$/, '')}.`;
+}
+function codexYamlString(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 function validateCodexSkillReadiness(normalizedMd: string): 'ready' | 'degraded' | 'invalid' {
   if (!normalizedMd.trim()) return 'invalid';
   const fmMatch = normalizedMd.match(/^---\n([\s\S]*?)\n---/);
@@ -2462,7 +2494,11 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const fallbackDesc = `${fallbackName.replace(/[-_]+/g, ' ')} skill.`;
     const meta = f?.codexMeta;
 
-    const name = meta?.name || fallbackName;
+    // 2026-10-25: the folder slug wins. Every caller passes the ZIP folder name (codexSlug from the
+    // name typed in Configure, or the per-file slug), while meta.name was set at upload time from the
+    // FILE name, before the user named the skill. OpenAI's spec: the folder is named exactly after
+    // the skill. A real test shipped name "relatch-monthly-board-update-template" in "board-azure-test/".
+    const name = fallbackName || meta?.name;
     if (!name || !body) {
       return { name: name || fallbackName, description: fallbackDesc, status: 'invalid' };
     }
@@ -2548,10 +2584,9 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
   const buildCompanionYaml = (): string => {
     const resolved = resolveCodexFrontmatter(bestCodexFile(), codexSlug);
     const displayName = formatCodexDisplayName(resolved.name);
-    const firstSentence = resolved.description.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || resolved.description;
-    const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence)
-      .replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
+    const short = codexYamlString(codexShortDescription(resolved.description));
+    const prompt = codexYamlString(codexDefaultPrompt(resolved.description));
+    return `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n  default_prompt: "${prompt}"\n\npolicy:\n  allow_implicit_invocation: true\n`;
   };
 
   // Single shared normalization function - used by preview, copy, yaml, and ZIP export.
@@ -2649,11 +2684,11 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
         const fmData = extractCodexFm(skillMd);
         const resolved = resolveCodexFrontmatter(f, fileSlug);
         const rawDesc = fmData?.description || resolved.description;
-        const firstSentence = rawDesc.match(/^[^.!?]+[.!?]?/)?.[0]?.trim() || rawDesc;
-        const short = (firstSentence.length > 100 ? firstSentence.slice(0, 97) + '...' : firstSentence).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const short = codexYamlString(codexShortDescription(rawDesc));
+        const prompt = codexYamlString(codexDefaultPrompt(rawDesc));
         const canonicalName = fmData?.name || resolved.name;
         const displayName = formatCodexDisplayName(canonicalName);
-        const yaml = `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n\npolicy:\n  allow_implicit_invocation: true\n`;
+        const yaml = `interface:\n  display_name: "${displayName}"\n  short_description: "${short}"\n  brand_color: "#8b5cf6"\n  default_prompt: "${prompt}"\n\npolicy:\n  allow_implicit_invocation: true\n`;
         zip.file(`${fileSlug}/SKILL.md`, skillMd);
         zip.file(`${fileSlug}/agents/openai.yaml`, yaml);
       }
