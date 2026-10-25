@@ -1386,7 +1386,7 @@ function fixAiYamlFrontmatter(content: string): string {
   );
 }
 
-async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string, codexShapeOverride?: 'deliverable'): Promise<string | { content: string; degraded: boolean }> {
+async function enrichWithAI(rawText: string, category: string, fileName: string, template: string = 'A', richFormats: string[] = [], charCap: number = 3500, sizeClass: string = 'small', target: 'claude' | 'codex' = 'claude', sessionId?: string, fullText?: string): Promise<string | { content: string; degraded: boolean }> {
   // Funnel session id (landing→app→backend), read directly from localStorage since this
   // is a module-level function outside the component tree — distinct from the `sessionId`
   // parameter above, which is the per-upload-batch quota-replay-dedup id sent to the backend.
@@ -1430,10 +1430,8 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
     // v2.2: derive codexShape from detected domain (explicit override) or fall back to
     // template-mapped default. Only sent when target === 'codex' - backend defaults to
     // 'execute' if absent, so omitting on Claude requests preserves the existing contract.
-    // 2026-10-25 (Codex DELIVERABLE): the user's explicit "produce this document" choice wins; the
-    // backend keeps it (Jev may not override it).
     const codexShape = target === 'codex'
-      ? (codexShapeOverride || (detectedDomain as any)?.codexShape || templateToShape((detectedDomain as any)?.template))
+      ? ((detectedDomain as any)?.codexShape || templateToShape((detectedDomain as any)?.template))
       : undefined;
 
     const token = _getToken ? await _getToken() : null;
@@ -1465,6 +1463,10 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
         target,
         ...(codexShape ? { codexShape } : {}),
         ...(sessionId ? { sessionId } : {}),
+        // 2026-10-25 (Codex DELIVERABLE auto-detection): the whole document for Codex, next to the
+        // distilled rawText. The backend asks Jev whether it is a document to produce again and, if
+        // so, writes a DELIVERABLE skill from this text. Otherwise rawText is used exactly as before.
+        ...(target === 'codex' && fullText ? { fullText } : {}),
       }),
     });
 
@@ -1529,7 +1531,7 @@ async function enrichWithAI(rawText: string, category: string, fileName: string,
   }
 }
 
-async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sessionId?: string, produceDoc: boolean = false): Promise<UploadedFile> {
+async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sessionId?: string): Promise<UploadedFile> {
   const traceId = `ingest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const precheck = validateInputFile(file);
   if (!precheck.ok) throw new Error(precheck.reason || 'Invalid file');
@@ -1575,17 +1577,9 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
   // (32000). The backend rebuilds the 2x (16000) sample from it byte for byte for every template
   // except F-K, which read the whole 32000 sample (relatch api/enrich.js shrinkLargeSample, keyed
   // on charCap === 32000). Medium stays 2x. Ship the backend change first.
-  // 2026-10-25 (Codex DELIVERABLE, vault "Relatch Codex V3 Upgrade"): when the user asks for a skill
-  // that produces this document, Codex gets the document whole (up to the backend's F-K ceiling,
-  // 20000 medium / 32000 large) instead of the distilled 2x text: distillation keeps rule lines and
-  // drops the headings, schedules and checklists that a document's structure is made of.
-  const dlvCodex = target === 'codex' && produceDoc;
-  const dlvCap = profile.sizeClass === 'small' ? profile.charCap : profile.sizeClass === 'large' ? 32000 : 20000;
-  const charCap = dlvCodex ? dlvCap : profile.sizeClass === 'small' ? profile.charCap : profile.charCap * (target === 'claude' && profile.sizeClass === 'large' ? 4 : 2);
+  const charCap = profile.sizeClass === 'small' ? profile.charCap : profile.charCap * (target === 'claude' && profile.sizeClass === 'large' ? 4 : 2);
 
-  const textForEnrichment = dlvCodex
-    ? (extracted.text.length <= charCap ? extracted.text : sampleLargeDocument(extracted.text, charCap))
-    : target === 'codex'
+  const textForEnrichment = target === 'codex'
     ? distillForCodex(extracted.text, charCap)
     : profile.sizeClass === 'large'
       ? sampleLargeDocument(extracted.text, charCap)
@@ -1604,7 +1598,11 @@ async function parseFile(file: File, target: 'claude' | 'codex' = 'claude', sess
     profile.sizeClass,
     target,
     sessionId,
-    dlvCodex ? 'deliverable' : undefined
+    // 2026-10-25: Codex also gets the whole document (up to the backend's 20000 medium / a 32000
+    // start-middle-end sample for large), for DELIVERABLE auto-detection. Claude: undefined.
+    target === 'codex'
+      ? (extracted.text.length <= (profile.sizeClass === 'large' ? 32000 : 20000) ? extracted.text : sampleLargeDocument(extracted.text, profile.sizeClass === 'large' ? 32000 : 20000))
+      : undefined
   );
   const content = typeof enrichResult === 'string' ? enrichResult : (enrichResult as any).content;
   const isDegraded = typeof enrichResult !== 'string' && (enrichResult as any).degraded === true;
@@ -1727,9 +1725,6 @@ const PROCESSING_MESSAGES = [
 
 function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, target, onQuotaReached, onAnonTokenInvalid, quotaLocked, onLockedClick, rlSessionId }: { files: UploadedFile[]; onFilesAdded: (f: UploadedFile[]) => void; onRemoveFile: (id: string) => void; onSampleLoad: () => void; target: 'claude' | 'codex'; onQuotaReached: (info: { limitType: 'daily' | 'weekly'; weeklyCount: number }) => void; onAnonTokenInvalid: () => void; quotaLocked: boolean; onLockedClick: () => void; rlSessionId?: string | null }) {
   const [isDragging, setIsDragging] = useState(false);
-  // 2026-10-25 (Codex DELIVERABLE): "make a skill that produces this document". Files are enriched
-  // at upload, so the choice is made here, before adding files.
-  const [produceDoc, setProduceDoc] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusIdx, setStatusIdx] = useState(0);
@@ -1764,7 +1759,7 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
 
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target, sessionId, target === 'codex' && produceDoc)));
+    const results = await Promise.allSettled(allFiles.map(file => parseFile(file, target, sessionId)));
     const parsed: UploadedFile[] = [];
     const errors: string[] = [];
     let quotaInfo: { limitType: 'daily' | 'weekly'; weeklyCount: number } | null = null;
@@ -1815,25 +1810,6 @@ function FileUploadZone({ files, onFilesAdded, onRemoveFile, onSampleLoad, targe
 
   return (
     <div className="space-y-6">
-      {target === 'codex' && (
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-white">Make a skill that produces this document</p>
-            <p className="text-[11px] text-gray-500">For a template or a finished example: a report, memo, review or meeting pack. Codex reads the whole document and learns to draft the next one.{files.length > 0 ? ' Choose this before adding files.' : ''}</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={produceDoc}
-            aria-label="Make a skill that produces this document"
-            disabled={files.length > 0 || isProcessing}
-            onClick={() => setProduceDoc((v) => !v)}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${produceDoc ? 'bg-blue-500' : 'bg-white/10'}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${produceDoc ? 'translate-x-5' : ''}`} />
-          </button>
-        </div>
-      )}
       <AnimatedSection>
         <div
           onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleDrop(e); }}
