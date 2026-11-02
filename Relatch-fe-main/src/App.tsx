@@ -1711,6 +1711,36 @@ function toSkillSlug(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 60) || 'my-skill';
 }
 
+// A Claude skill file's header follows the Agent Skills format (agentskills.io). claude.ai uploads and the
+// Skills API accept only name, description, license, compatibility, metadata and allowed-tools at the top
+// and fail with "Unexpected key(s) in SKILL.md frontmatter" on anything else, so Relatch's own labels
+// (domain, content type, priority, use cases) go under `metadata`, a map of strings.
+// `name`: a slug, which is also the skill's folder. claude.ai also refuses a name containing "claude" or
+// "anthropic", so those words are dropped from it (the downloaded file keeps its own name).
+function claudeSkillName(name: string): string {
+  return toSkillSlug(toSkillSlug(name).replace(/claude|anthropic/g, '-'));
+}
+
+// A one-line YAML string.
+const yamlString = (s: string) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+
+const andList = (xs: string[]) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+// What a skill does and when to use it, in one line, for a file that came without a usable description
+// (the backend writes one; the in-browser fallback skill does not): its opening sentence, then up to four
+// of its real use cases. At most 1024 characters, no angle brackets (the spec's limits).
+function describeClaudeSkill(body: string, useCases: string[], name: string): string {
+  const para = body.split('\n').map((l) => l.trim()).find((l) => l && !/^(#|\||[-*>`]|\d+\.)/.test(l)) ?? '';
+  const plain = para.replace(/<[^>]*>/g, '').replace(/[*_`]/g, '');
+  let what = (plain.match(/^.+?[.!?](?=\s+[A-Z"'(]|\s*$)/)?.[0] ?? plain).trim().replace(/^You (?:are|act as)\s+/, 'Acts as ');
+  if (what.length > 400) what = what.slice(0, 400).replace(/[\s,;:]+\S*$/, '');
+  if (!what) what = `${name.replace(/[-_]+/g, ' ')} skill`;
+  if (!/[.!?]$/.test(what)) what += '.';
+  const real = useCases.map((c) => c.trim()).filter((c) => c && !/^case\s*\d+$/i.test(c) && c !== 'general use').slice(0, 4);
+  const when = real.length ? ` Use for ${andList(real)}.` : '';
+  return `${what}${when}`.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1024);
+}
+
 function makeSampleUploadedFile(): UploadedFile {
   const file = { name: SAMPLE_FILE_NAME } as File;
   return {
@@ -2309,15 +2339,25 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
                   ? `${baseSkillName}-${fileSlug}`
                   : baseSkillName;
 
+                // The Agent Skills header (see claudeSkillName): a slug name, the backend's description
+                // (enrich.js withDescription writes one on every Claude file; it was dropped here before
+                // 2026-11-02, so no downloaded Claude skill had one), Relatch's labels under metadata.
+                const backendFm = cleanContent.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+                const backendDesc = (backendFm.match(/^description:\s*(.+)$/m)?.[1] ?? '')
+                  .trim().replace(/^"([\s\S]*)"$/, '$1').replace(/^'([\s\S]*)'$/, '$1').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+                  .replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1024);
+                const description = backendDesc && !/^What this skill does\b/i.test(backendDesc)
+                  ? backendDesc
+                  : describeClaudeSkill(cleanContent.replace(/^---\n[\s\S]*?\n---\n?/, ''), useCasesMatch ? useCases : [], safeSkillName);
+
                 let frontmatter = `---\n`;
-                frontmatter += `name: "${safeSkillName}"\n`;
-                frontmatter += `domain: "${domain}"\n`;
-                frontmatter += `content_type: "${contentType}"\n`;
-                frontmatter += `priority: "${config.categories[f.category]?.priority ?? 'medium'}"\n`;
-                frontmatter += `use_cases:\n`;
-                useCases.forEach(uc => {
-                  frontmatter += `  - "${uc}"\n`;
-                });
+                frontmatter += `name: ${claudeSkillName(safeSkillName)}\n`;
+                frontmatter += `description: ${yamlString(description)}\n`;
+                frontmatter += `metadata:\n`;
+                frontmatter += `  domain: ${yamlString(domain)}\n`;
+                frontmatter += `  content-type: ${yamlString(contentType)}\n`;
+                frontmatter += `  priority: ${yamlString(config.categories[f.category]?.priority ?? 'medium')}\n`;
+                frontmatter += `  use-cases: ${yamlString(useCases.join('; '))}\n`;
                 frontmatter += `---`;
 
                 let body = cleanContent;
@@ -2446,22 +2486,35 @@ function SkillOutput({ files, config, videoSeenSignature, setVideoSeenSignature,
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     const slug = toSkillSlug(config.skillName);
+    // The skill's folder: its `name`, which the Agent Skills format requires to match (claudeSkillName).
+    const folder = claudeSkillName(config.skillName);
+    // Before 2026-11-02 (kept for history):
     // Generate a minimal SKILL.md (name + description only). Do NOT promote any
     // enriched file into this slot - each enriched file keeps its own filename.
     // Extract the domain from each file's frontmatter for the description.
-    const domains = [...new Set(generatedFiles.map(f => {
-      const m = f.content.match(/^domain:\s*"?([^"\n]+)"?/m);
-      return m ? m[1].trim() : f.category;
-    }))];
-    const domainList = domains.length === 1
-      ? domains[0]
-      : domains.length === 2
-        ? `${domains[0]} and ${domains[1]}`
-        : `${domains.slice(0, -1).join(', ')} and ${domains[domains.length - 1]}`;
-    const skillMdContent = `---\nname: "${slug}"\ndescription: "A combined skill integrating ${domainList} across ${generatedFiles.length} source documents."\n---\n`;
-    zip.file(`${slug}/SKILL.md`, skillMdContent);
+    // Now: a short SKILL.md index. Still never an enriched file promoted into this slot.
+    // Until 2026-11-02 it held only a name and a description, so nothing pointed the agent at the files
+    // beside it (and installers that copy only linked files, like Hermes's, dropped them). Its body now
+    // links each file with what it is for, read from that file's own header; its description names the
+    // parts and up to four of their use cases.
+    const parts = generatedFiles.map(f => {
+      const fm = f.content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+      const unq = (v: string) => v.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      return {
+        label: f.filename.replace(/\.md$/, ''),
+        file: f.filename,
+        about: unq(fm.match(/^description:\s*"((?:[^"\\]|\\.)*)"/m)?.[1] ?? ''),
+        cases: unq(fm.match(/^\s+use-cases:\s*"((?:[^"\\]|\\.)*)"/m)?.[1] ?? '').split(';').map(c => c.trim()).filter(c => c && c !== 'Professional Communication'),
+      };
+    });
+    const cases: string[] = [];
+    for (let i = 0; cases.length < 4 && parts.some(p => i < p.cases.length); i++) for (const p of parts) if (p.cases[i] && !cases.includes(p.cases[i]) && cases.length < 4) cases.push(p.cases[i]);
+    const indexDesc = `Combines ${andList(parts.map(p => p.label))} into one skill.${cases.length ? ` Use for ${andList(cases)}.` : ''}`.replace(/[<>]/g, '').slice(0, 1024);
+    const links = parts.map(p => `- [${p.label}](${p.file})${p.about ? `: ${p.about}` : ''}`).join('\n');
+    const skillMdContent = `---\nname: ${folder}\ndescription: ${yamlString(indexDesc)}\n---\n\n# ${config.skillName.trim() || folder}\n\nThis skill is in ${parts.length} parts. Read the part that fits the task, or all of them when it spans several:\n\n${links}\n`;
+    zip.file(`${folder}/SKILL.md`, skillMdContent);
     for (const file of generatedFiles) {
-      zip.file(`${slug}/${file.filename}`, file.content);
+      zip.file(`${folder}/${file.filename}`, file.content);
     }
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
