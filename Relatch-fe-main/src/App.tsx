@@ -3199,7 +3199,10 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
     };
   }, [onClose]);
 
-  const WEEKLY_LIMIT = 35;
+  // 2026-11-14: must match DAY_LIMIT / WEEK_LIMIT in the backend's lib/usage-limits.js
+  // (was 5 / 35 while generation ran on the free Gemini tier only).
+  const DAILY_LIMIT = 3;
+  const WEEKLY_LIMIT = 21;
   const weeklyPct = Math.min((weeklyCount / WEEKLY_LIMIT) * 100, 100);
   const isWeekly = limitType === 'weekly';
 
@@ -3227,7 +3230,7 @@ function QuotaModal({ limitType, weeklyCount, onClose }: { limitType: 'daily' | 
           <img src="/lock.png" className="w-9 h-9 object-contain" alt="" />
         </div>
         <h2 id="relatch-quota-title" className="text-base font-bold text-white tracking-tight">
-          {isWeekly ? `Weekly Quota Exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : 'Daily Quota Exhausted 5 / 5'}
+          {isWeekly ? `Weekly Quota Exhausted ${WEEKLY_LIMIT} / ${WEEKLY_LIMIT}` : `Daily Quota Exhausted ${DAILY_LIMIT} / ${DAILY_LIMIT}`}
         </h2>
         <p className="text-[12px] text-gray-400 mt-2 leading-relaxed">
           Relatch is currently free and in product validation. We've capped usage per user to keep access fair.
