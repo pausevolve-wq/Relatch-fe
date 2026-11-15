@@ -35,6 +35,7 @@ import { ComingSoon } from './ComingSoon';
 import { HelpMenu } from './HelpMenu';
 import { Ambient } from './Ambient';
 import { AuthSheet, type Unlock } from './auth/AuthSheet';
+import { appPath, pathInApp } from './base';
 import { RelatchMark } from './RelatchMark';
 import { stripFrontmatter } from './SkillMarkdown';
 import { useSkillJob, MAX_FILES, type JobItem } from './useSkillJob';
@@ -57,6 +58,14 @@ const pill = 'inline-flex items-center justify-center gap-2 rounded-full px-5 py
 // 'soon' (2026-11-03, Manas): in its place, Settings opens "Relatch in your agent - coming soon" (ComingSoon.tsx).
 type Page = 'contact' | 'privacy' | 'terms' | 'soon';
 const isPage = (v: string): v is Page => v === 'contact' || v === 'privacy' || v === 'terms' || v === 'soon';
+// 2026-11-15 (flip): the legal pages' own addresses, so Clerk's sign-up consent can link straight to them.
+// /legal is the Terms (they link to the Privacy Policy). Opening one shows that page; leaving it puts the address
+// back to the app's own, so a reload doesn't reopen it.
+const LEGAL_PATHS: Record<string, Page> = { '/privacy-policy': 'privacy', '/terms-of-service': 'terms', '/legal': 'terms' };
+function legalPageAtUrl(): Page | null {
+  const at = pathInApp(window.location.pathname);
+  return at ? LEGAL_PATHS[at.length > 1 ? at.replace(/\/+$/, '') : at] ?? null : null;
+}
 type Place = { view: 'skill'; id: string } | { view: Page } | { view: 'home' } | { view: 'building' };
 const PLACE = 'relatch_v3_place';
 function readPlace(): Place | null {
@@ -149,7 +158,11 @@ export default function V3App() {
   // A page of its own, without the sidebar: the API platform (Settings > Developer actions; removed 2026-11-03), Contact
   // ("Contact us" on the home screen, "Contact support" in the help menu), or the Privacy policy and
   // Terms of service (the help menu).
-  const [page, setPage] = useState<Page | null>(place && isPage(place.view) ? place.view : null);
+  const [page, setPage] = useState<Page | null>(() => legalPageAtUrl() ?? (place && isPage(place.view) ? place.view : null));
+  useEffect(() => {
+    if (page || !legalPageAtUrl()) return;
+    window.history.replaceState(window.history.state, '', appPath() + window.location.search + window.location.hash);
+  }, [page]);
   // Clerk's account settings, as a pop-up.
   const [account, setAccount] = useState(false);
   // A short line in the corner: the page was reloaded mid-build, or more documents were dropped than a

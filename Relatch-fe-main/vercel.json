@@ -2,10 +2,13 @@
   "buildCommand": "npm install && npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "redirects": [
+    { "source": "/v3", "destination": "/", "permanent": false },
+    { "source": "/v3/:path*", "destination": "/:path*", "permanent": false },
+    { "source": "/goal", "destination": "/", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/v3", "destination": "/v3.html" },
-    { "source": "/v3/(.*)", "destination": "/v3.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/v3.html" }
   ],
   "headers": [
     {
