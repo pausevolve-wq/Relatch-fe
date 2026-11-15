@@ -12,6 +12,9 @@
 //   idle  - a slow breath, eyes on the pointer
 //   doubt - the email looks wrong or is a throwaway: the latch tightens and the eyes narrow unevenly
 //           (one lower than the other, a sceptical look), still following the text cursor while it's fixed
+//   eager - the unlock sheet (2026-11-15): the latch stands wide open with a little bob and the eyes are
+//           bigger, keen on the skill it is holding for them
+//   glee  - unlocked: both eyes squint up in a smile while the latch turns home
 // Each eye is a point on a small sphere behind the window: the gaze turns the sphere, and an eye heading
 // for the rim moves less and narrows, which makes the flat window read as round (Bencho's idea).
 //
@@ -25,7 +28,7 @@ import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 
 import { MARK_PIECES } from '../markPieces';
 import { cn } from '@/lib/utils';
 
-export type BuddyMood = 'idle' | 'watch' | 'shut' | 'busy' | 'doubt';
+export type BuddyMood = 'idle' | 'watch' | 'shut' | 'busy' | 'doubt' | 'eager' | 'glee';
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
@@ -45,6 +48,9 @@ const LEAN = 2.4;
 const WANDER = { idle: 0.18, watch: 0.06 };
 /** Doubt: how open each eye stays (left, right), so one sits lower than the other */
 const DOUBT_LIDS = [0.42, 0.7];
+/** Glee: both eyes squint the same way, a smile; Eager: how much bigger the eyes grow */
+const GLEE_LIDS = [0.34, 0.34];
+const EAGER_EYES = 1.14;
 /** The pointer has rested this long: the mark starts looking around on its own */
 const GLANCE_AFTER = 2500;
 const BLINK_CLOSE = 70;
@@ -138,6 +144,9 @@ export function MarkBuddy({
     let open = 1;
     // Each eye's own lid on top of the shared one (only doubt sets them apart)
     const eyeLid = [1, 1];
+    // Eye size on top of the sphere's shading (only eager grows it), and how high a smile lifts them
+    let eyeScale = 1;
+    let lift = 0;
     let rot = 0;
     let rotTarget = 0;
     let seenTurns = live.current.turns;
@@ -201,7 +210,7 @@ export function MarkBuddy({
       } else if (pointer) { glance = null; nextGlance = 0; aimAt(pointer.x, pointer.y); }
 
       // Life on top of the target: a slow wander that never repeats and never stops
-      const reach = reduced || m === 'shut' || m === 'busy' ? 0 : m === 'idle' ? WANDER.idle : WANDER.watch;
+      const reach = reduced || m === 'shut' || m === 'busy' ? 0 : m === 'idle' || m === 'eager' ? WANDER.idle : WANDER.watch;
       const wx = reach * drift(now, 0.00071, 0.00173, 0.0041, 1.3);
       const wy = reach * 0.7 * drift(now, 0.00059, 0.00191, 0.0037, 0.2);
 
@@ -211,6 +220,9 @@ export function MarkBuddy({
       if (m === 'watch') openTarget = 2.4;
       // Doubt: the latch draws in a little, less open than watching
       if (m === 'doubt') openTarget = 0.6;
+      // Eager: wide open with a quick bob; glee: open and still, the smile does the talking
+      if (m === 'eager') openTarget = 3 + 0.6 * Math.sin(now / 420);
+      if (m === 'glee') openTarget = 2.2;
       // Exactly the logo: pressing the pieces further in merges them and loses the mark
       if (m === 'shut') { openTarget = 0; lidTarget = 0.06; }
       if (m === 'busy') {
@@ -241,9 +253,13 @@ export function MarkBuddy({
       else if (!reduced && sinceBlink < BLINK_CLOSE + BLINK_OPEN) eyeOpen = 0.08 + 0.92 * (1 - (1 - (sinceBlink - BLINK_CLOSE) / BLINK_OPEN) ** 2);
 
       eyeLid.forEach((v, i) => {
-        const target = m === 'doubt' ? DOUBT_LIDS[i] : 1;
+        const target = m === 'doubt' ? DOUBT_LIDS[i] : m === 'glee' ? GLEE_LIDS[i] : 1;
         eyeLid[i] = reduced ? target : v + (target - v) * Math.min(1, 0.2 * dt);
       });
+      const scaleTarget = m === 'eager' ? EAGER_EYES : 1;
+      const liftTarget = m === 'glee' ? -2.2 : 0;
+      eyeScale = reduced ? scaleTarget : eyeScale + (scaleTarget - eyeScale) * Math.min(1, 0.18 * dt);
+      lift = reduced ? liftTarget : lift + (liftTarget - lift) * Math.min(1, 0.2 * dt);
       if (reduced) {
         s.x = s.tx; s.y = s.ty; open = openTarget; lid = lidTarget; rot = rotTarget;
       } else {
@@ -297,10 +313,10 @@ export function MarkBuddy({
         const z2 = z1 * cp;
         const depth = clamp(z2, 0, 1);
         const sh = 0.45 + 0.55 * depth;
-        const w = EYE.w * sh * (0.7 + 0.3 * depth);
-        const h = Math.max(0.6, EYE.h * sh * eyeOpen * eyeLid[i] * breath);
+        const w = EYE.w * sh * (0.7 + 0.3 * depth) * eyeScale;
+        const h = Math.max(0.6, EYE.h * sh * eyeOpen * eyeLid[i] * breath * eyeScale);
         const ex = C + hx * 1.6 + x1 * SPHERE;
-        const ey = C + hy * 1.6 + y2 * SPHERE;
+        const ey = C + hy * 1.6 + y2 * SPHERE + lift;
         eye.setAttribute('x', (-w / 2).toFixed(2));
         eye.setAttribute('y', (-h / 2).toFixed(2));
         eye.setAttribute('width', w.toFixed(2));

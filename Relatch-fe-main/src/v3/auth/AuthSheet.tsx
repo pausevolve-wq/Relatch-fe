@@ -16,7 +16,7 @@
 // The auth itself sits behind AuthApi (sandboxAuth.ts in the prototype, Clerk at the port).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircleIcon, XIcon } from '@phosphor-icons/react';
+import { CheckCircleIcon, FileTextIcon, LockSimpleIcon, LockSimpleOpenIcon, XIcon } from '@phosphor-icons/react';
 import { MarkBuddy, type BuddyMood } from './MarkBuddy';
 import { CodeBoxes, CodeNote, EMAIL, noAutofill, normalEmail, useEmailCode, type EmailRefusal, type EmailVerdict, type Outcome, type Purpose } from './emailCode';
 import { useAuthApi } from './authApi';
@@ -25,6 +25,11 @@ import { readStorage } from '@/engine/core';
 import { captureEvent } from '../../analytics';
 
 export type Provider = 'google' | 'github';
+/** The unlock sheet (2026-11-15, Manas's hybrid plan): a signed-out visitor's free skill is shown as a preview;
+ *  Copy, Download and "Read the whole skill" open this look of the sheet. Same Clerk steps underneath, only
+ *  the header, the ticket for their skill, the buttons and the mark's lines differ. `action` is what they
+ *  tapped, carried on by V3App once they're in. */
+export type Unlock = { name: string; sections: number; agent: string; action: 'download' | 'copy' | 'read' };
 export type AuthApi = {
   /** Start the sign-up with email, password and consent (prod requires legalAccepted), and mail its code */
   startSignUp: (details: { email: string; password: string; legalAccepted: true }) => Promise<Outcome>;
@@ -113,23 +118,24 @@ function useSettled<T>(value: T, ms: number): T {
   return settled;
 }
 
-function mascotLine(o: { error: string; done: boolean; working: boolean; busy: 'sending' | 'checking' | null; field: Focus; signup: boolean; emailOk: boolean; verified: boolean; shut: boolean; doubt: EmailIssue }): string {
+function mascotLine(o: { error: string; done: boolean; working: boolean; busy: 'sending' | 'checking' | null; field: Focus; signup: boolean; emailOk: boolean; verified: boolean; shut: boolean; doubt: EmailIssue; unlock: boolean }): string {
   // The email's own reason before the generic error line: when Continue is refused, the mark names why
   // (Clerk's verdict), not just "check that one". Kept short: one line beside the mark, ~270px on a phone.
   if (o.doubt === 'temporary') return 'No throwaway emails, please.';
   if (o.doubt === 'blocked') return "That email can't be used here.";
   if (o.doubt === 'invalid') return 'Hmm, that email looks off.';
   if (o.error) return 'Hmm, check that one.';
-  if (o.done) return o.signup ? "You're in! Welcome." : "You're in!";
+  if (o.done) return o.unlock ? "Unlocked! It's all yours." : o.signup ? "You're in! Welcome." : "You're in!";
   if (o.working) return 'One second...';
   if (o.busy === 'sending') return 'Sending you a code...';
   if (o.busy === 'checking') return 'Checking your code...';
   if (o.field === 'code') return 'Check your inbox.';
-  if (o.shut) return "Latched shut. I'm not looking.";
+  if (o.shut) return o.unlock ? 'Not peeking. Promise.' : "Latched shut. I'm not looking.";
   if (o.field === 'password') return o.signup ? 'Now pick a password.' : 'And your password.';
-  if (o.field === 'agree') return 'Almost there.';
+  if (o.field === 'agree') return o.unlock ? "One tick and it's yours." : 'Almost there.';
   if (o.verified) return "You're verified!";
-  if (o.emailOk) return 'That looks right.';
+  if (o.emailOk) return o.unlock ? 'Perfect. Almost yours.' : 'That looks right.';
+  if (o.unlock) return o.signup ? 'I kept your skill safe!' : 'Log in to grab it.';
   return o.signup ? "Hi! What's your email?" : 'Welcome back!';
 }
 
@@ -156,13 +162,15 @@ const socialButton = 'inline-flex h-11 items-center justify-center gap-2 rounded
 const inputClass = 'h-12 w-full rounded-xl bg-white/[0.04] px-4 text-[16px] text-fg outline-none ring-1 ring-line-2 transition-shadow placeholder:text-fg-3 focus:ring-2 focus:ring-white/60 [&::-webkit-search-cancel-button]:appearance-none';
 const textLink = 'font-medium text-fg underline underline-offset-4 transition-colors hover:text-white';
 
-export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onClose: () => void }) {
+export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-up'; onClose: () => void; unlock?: Unlock }) {
   const api = useAuthApi();
   const panel = useRef<HTMLDivElement>(null);
+  const ticket = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>(view === 'sign-up' ? 'signup' : 'login');
   // Production's sign-in funnel events (the old App.tsx AuthGate), same names, from V3's own sheet (2026-11-15)
   const signInEvent = (name: string, extra: Record<string, unknown> = {}) => captureEvent(name, { ...extra, session_id: readStorage('rl_session_id') });
   useEffect(() => { if (mode === 'login') signInEvent('clerk_signin_opened'); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (unlock) signInEvent('unlock_sheet_opened', { action: unlock.action, agent: unlock.agent }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const signup = mode === 'signup';
   const usesCode = mode !== 'login';
   const [done, setDone] = useState(false);
@@ -175,6 +183,8 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
   // Sign-up shows email and password together (production's screen); log-in grows field by field
   const [shown, setShown] = useState(view === 'sign-up' ? FIELDS.signup.length : 1);
   const [focused, setFocused] = useState<Focus | null>(null);
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const all = shown === fields.length;
@@ -220,8 +230,21 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
   const field: Focus = focused ?? (emailStage === 'code' ? 'code' : fields.slice(0, shown).find((f) => problemWith(f, values, mode)) ?? fields[shown - 1]);
   // The latch shuts only once there is a password to hide, not the moment the field gets focus
   const shut = focused === 'password' && values.password.length > 0;
-  const line = useSettled(mascotLine({ error, done, working: working !== null, busy, field, signup, emailOk: emailGood, verified: emailStage === 'verified', shut, doubt }), 350);
-  const mood: BuddyMood = done ? 'idle' : busy || working ? 'busy' : shut ? 'shut' : doubt ? 'doubt' : focused ? 'watch' : 'idle';
+  const line = useSettled(mascotLine({ error, done, working: working !== null, busy, field, signup, emailOk: emailGood, verified: emailStage === 'verified', shut, doubt, unlock: !!unlock }), 350);
+  // Unlock: keen (eager) while nothing is going on, a smile (glee) once it's theirs
+  const mood: BuddyMood = done ? (unlock ? 'glee' : 'idle') : busy || working ? 'busy' : shut ? 'shut' : doubt ? 'doubt' : focused ? 'watch' : unlock ? 'eager' : 'idle';
+
+  // Unlock: the mark hops and looks at their skill as the sheet arrives, then goes back to the pointer
+  useEffect(() => {
+    if (!unlock) return;
+    const look = window.setTimeout(() => {
+      const box = ticket.current?.getBoundingClientRect();
+      if (box) setGaze({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+      setHops((n) => n + 1);
+    }, 320);
+    const free = window.setTimeout(() => setGaze((g) => (focusedRef.current ? g : null)), 1900);
+    return () => { window.clearTimeout(look); window.clearTimeout(free); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The mark's answer to a wrong or throwaway email: a head shake, then doubt until it's fixed. Once per problem. */
   function react(kind: EmailRefusal) {
@@ -313,13 +336,15 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
     focusField(f);
   }
 
-  function finish() {
+  function finish(method: string) {
+    if (unlock) signInEvent('unlock_auth_success', { action: unlock.action, mode: signup ? 'signup' : 'login', method });
     setDone(true);
     setWorking(null);
     setHops((n) => n + 1);
     setTurns((n) => n + 1);
-    // Let the latch settle before the sheet closes (V3App closes it once signed in)
-    window.setTimeout(api.activate, 750);
+    // Let the latch settle before the sheet closes (V3App closes it once signed in). Unlock holds a little
+    // longer, so "Unlocked! It's all yours." is read and the lock is seen opening before the sheet goes.
+    window.setTimeout(api.activate, unlock ? 1900 : 750);
   }
 
   /** Already has an account: on to log-in with the address kept, straight to the password */
@@ -373,7 +398,7 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
       if (!signup) signInEvent('clerk_signin_failed', { method: provider, error: result.error });
       return complain(fields[0], result.error);
     }
-    finish();
+    finish(provider);
   }
 
   /** Sign-up: everything checked here, then Continue mails the code (nothing is mailed before this) */
@@ -434,7 +459,7 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
       await sendEmailCode();
       return;
     }
-    finish();
+    finish('password');
   }
 
   function primary() {
@@ -483,7 +508,7 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
     }
     if (!result.verified) return;
     // Sign-up: the right code finishes the account (email + password were given before the code)
-    finish();
+    finish('email_code');
   }
 
   /** Sign-up skips the browser's saved suggestions on the email; log-in keeps them, and password managers get the password */
@@ -513,16 +538,19 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
     return () => window.clearTimeout(timer);
   });
 
-  const title = signup ? 'Create your free account' : mode === 'code' ? 'Log in with a code' : 'Welcome back';
-  const subtitle = signup ? 'Save every skill you make, on any device.' : mode === 'code' ? "We'll email you a 6-digit code." : 'Log in to pick up where you left off.';
+  const title = unlock ? (done ? "It's yours" : 'Your skill is ready') : signup ? 'Create your free account' : mode === 'code' ? 'Log in with a code' : 'Welcome back';
+  const subtitle = unlock
+    ? done ? { download: 'Downloading it now.', copy: 'Copying it for you.', read: 'Opening the whole skill.' }[unlock.action]
+    : (signup ? 'Create a free account to download it and keep it. You also get 3 new skills a day.' : mode === 'code' ? "We'll email you a 6-digit code, then it's yours." : 'Log in to download it and keep it.')
+    : signup ? 'Save every skill you make, on any device.' : mode === 'code' ? "We'll email you a 6-digit code." : 'Log in to pick up where you left off.';
   const label = working === 'google' ? 'Opening Google...' : working === 'github' ? 'Opening GitHub...'
-    : done ? "You're in"
+    : done ? (unlock ? 'Unlocked' : "You're in")
     : working ? (signup ? 'Creating your account...' : 'Logging in...')
     : busy === 'checking' ? 'Checking...'
     // (no "Sending your code..." here: send() shows the code boxes the moment it starts, and their note
     // says the code is on its way)
-    : signup && emailStage === 'code' ? 'Create my free account'
-    : all && mode === 'login' ? 'Log in'
+    : signup && emailStage === 'code' ? (unlock ? 'Unlock my skill' : 'Create my free account')
+    : all && mode === 'login' ? (unlock ? 'Log in and unlock' : 'Log in')
     : 'Continue';
 
   return createPortal(
@@ -540,6 +568,19 @@ export function AuthSheet({ view, onClose }: { view: 'sign-in' | 'sign-up'; onCl
           <XIcon size={18} />
         </button>
 
+        {/* Unlock: their skill, held for them. The lock opens once they're in. */}
+        {unlock && (
+          <div ref={ticket} className="mb-5 mr-10 flex items-center gap-3 rounded-2xl border border-line-2 bg-white/[0.03] px-3.5 py-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-fg"><FileTextIcon size={18} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14.5px] font-medium text-fg">{unlock.name}</span>
+              <span className="block truncate text-[12.5px] text-fg-2">{unlock.agent} skill · {unlock.sections} {unlock.sections === 1 ? 'section' : 'sections'}</span>
+            </span>
+            <span className={cn('grid size-8 shrink-0 place-items-center rounded-full transition-colors duration-300', done ? 'bg-white text-black' : 'bg-white/[0.06] text-fg-2')} aria-label={done ? 'Unlocked' : 'Locked'}>
+              {done ? <LockSimpleOpenIcon size={15} weight="bold" className="ra-rise" /> : <LockSimpleIcon size={15} weight="bold" />}
+            </span>
+          </div>
+        )}
         <h2 id="ra-title" className="pr-8 text-[24px] font-semibold leading-[1.15] tracking-[-0.03em]">{title}</h2>
         <p className="mt-1.5 text-[14.5px] leading-[1.5] text-fg-2">{subtitle}</p>
 
