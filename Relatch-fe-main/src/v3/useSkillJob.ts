@@ -14,7 +14,7 @@ import { useAuth } from '@clerk/react';
 import { captureEvent } from '../analytics';
 import { TARGET_NAME } from './logos';
 import type { Target } from './skillExport';
-import { parseFile, setTokenGetter, _getToken, ANON_TOKEN_URL, ANON_TOKEN_STORAGE_KEY, ANON_TRIAL_USED_KEY, ENRICH_PROXY_URL, readStorage, type EngineStage, type EnrichMeta } from '@/engine/core';
+import { parseFile, validateInputFile, setTokenGetter, _getToken, ANON_TOKEN_URL, ANON_TOKEN_STORAGE_KEY, ANON_TRIAL_USED_KEY, ENRICH_PROXY_URL, readStorage, type EngineStage, type EnrichMeta } from '@/engine/core';
 
 // Marks a set's sessionId complete on the server. Built in relatch#34 (api/session-complete.js, draft
 // until the V3 push). Contract: POST { sessionId } with the same auth as /api/enrich (Bearer, or the
@@ -194,7 +194,10 @@ export function useSkillJob(target: Target) {
   // A new set. Anything past three documents is left out (the caller says so).
   const run = useCallback((files: File[]) => {
     const seq = ++runSeq.current;
-    session.current = { id: `v3_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, startedAt: Date.now(), target, signedIn: !!isSignedIn, access: ensureAccess() };
+    // A set with no file Relatch can read mints no trial token (2026-11-15, found live: a .png spent one of the
+    // 5 tokens an IP gets an hour before parseFile said it can't read it). parseFile still shows that message.
+    const readable = files.some((f) => validateInputFile(f).ok);
+    session.current = { id: `v3_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, startedAt: Date.now(), target, signedIn: !!isSignedIn, access: readable ? ensureAccess() : Promise.resolve(true) };
     setShown(false);
     setCompleted(false);
     setItems([]);

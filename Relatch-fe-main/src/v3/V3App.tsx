@@ -34,7 +34,7 @@ const SANDBOX_NOTE = (() => {
 import { ComingSoon } from './ComingSoon';
 import { HelpMenu } from './HelpMenu';
 import { Ambient } from './Ambient';
-import { AuthSheet } from './auth/AuthSheet';
+import { AuthSheet, type Unlock } from './auth/AuthSheet';
 import { RelatchMark } from './RelatchMark';
 import { stripFrontmatter } from './SkillMarkdown';
 import { useSkillJob, MAX_FILES, type JobItem } from './useSkillJob';
@@ -110,7 +110,7 @@ function StopDialog({ signedIn, onKeep, onStop }: { signedIn: boolean; onKeep: (
 }
 
 export default function V3App() {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
   useIdentify(); // PostHog knows who a signed-in person is (production parity, 2026-11-15)
   // A foldable opened from its cover screen: the app opens out with it (useUnfold.ts).
   useUnfold();
@@ -129,6 +129,13 @@ export default function V3App() {
       return asked;
     } catch { return null; }
   });
+  // The unlock sheet: the free skill's Copy / Download / read-it-all, signed out. `resume` is that action, handed
+  // back to the preview once they're in (2026-11-15 hybrid plan)
+  const [unlock, setUnlock] = useState<Unlock | null>(null);
+  const [resume, setResume] = useState<Unlock['action'] | null>(null);
+  // The download that follows an unlock sign-up still earns the first-skill note (with their account's email)
+  const fromUnlock = useRef(false);
+  const openSignUp = (u?: Unlock) => { if (u) setUnlock(u); else setAuth('sign-up'); };
   const [lastFiles, setLastFiles] = useState<File[]>([]);
   const job = useSkillJob(target);
   const history = useSkillHistory();
@@ -175,7 +182,12 @@ export default function V3App() {
   useEffect(() => { try { localStorage.setItem('relatch_v3_target', target); } catch { /* ignore */ } }, [target]);
   useEffect(() => { try { localStorage.setItem('relatch_v3_motion', motion ? 'on' : 'off'); } catch { /* ignore */ } }, [motion]);
   useEffect(() => { try { if (paused) localStorage.setItem('relatch_v3_history_paused', '1'); else localStorage.removeItem('relatch_v3_history_paused'); } catch { /* ignore */ } }, [paused]);
-  useEffect(() => { if (isSignedIn) setAuth(null); }, [isSignedIn]);
+  useEffect(() => {
+    if (!isSignedIn) return;
+    setAuth(null);
+    // In from the unlock sheet: close it and let the preview carry on with what they tapped
+    setUnlock((u) => { if (u) setResume(u.action); return null; });
+  }, [isSignedIn]);
   useEffect(() => { if (job.phase !== 'done') window.scrollTo({ top: 0, behavior: 'smooth' }); }, [job.phase]);
 
   // A finished skill goes into the history: the skill files only, never the documents behind them. A
@@ -280,7 +292,8 @@ export default function V3App() {
     lastDownload.current = { of, name, plan };
     setInstall({ target: t, name, plan, parts });
     noteTarget.current = t;
-    if (!isSignedIn && NOTE_READY && !noteSeen()) setNoteDue(true);
+    if ((!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen()) setNoteDue(true);
+    fromUnlock.current = false;
   };
   // Never over another pop-up or page: it waits until the install guide, the sign-up sheet and the 404 are gone
   useEffect(() => {
@@ -400,10 +413,10 @@ export default function V3App() {
           {composing ? (
             <Start key={workspace ? 'compose' : 'intro'} compact={workspace} target={target} onTarget={setTarget} onFiles={(files) => guard(() => start(files))} onSample={() => guard(sample)} />
           ) : saved ? (
-            <JobStage key={saved.id} saved phase="done" parts={savedParts(saved)} target={saved.target} signedIn={!!isSignedIn} adding={FINISHED} onInstall={(name, plan) => downloaded(saved.id, saved.target, name, plan, savedParts(saved))} onAnother={() => guard(home)} onSignUp={() => setAuth('sign-up')} />
+            <JobStage key={saved.id} saved phase="done" parts={savedParts(saved)} target={saved.target} signedIn={!!isSignedIn} adding={FINISHED} onInstall={(name, plan) => downloaded(saved.id, saved.target, name, plan, savedParts(saved))} onAnother={() => guard(home)} onSignUp={openSignUp} />
           ) : (<>
             {(job.phase === 'thinking' || job.phase === 'done') && (
-              <JobStage phase={job.phase} parts={liveParts(job.items)} target={job.target} signedIn={!!isSignedIn} adding={{ canAdd: job.canAdd, left: job.left, closed: job.closed, onAdd: addFiles, complete: job.complete }} onInstall={(name, plan) => downloaded(liveKey, job.target, name, plan, liveParts(job.items))} onAnother={() => guard(home)} onSignUp={() => setAuth('sign-up')} />
+              <JobStage phase={job.phase} parts={liveParts(job.items)} target={job.target} signedIn={!!isSignedIn} adding={{ canAdd: job.canAdd, left: job.left, closed: job.closed, onAdd: addFiles, complete: job.complete }} onInstall={(name, plan) => downloaded(liveKey, job.target, name, plan, liveParts(job.items))} onAnother={() => guard(home)} onSignUp={openSignUp} resume={resume} onResumed={() => { fromUnlock.current = resume === 'download'; setResume(null); }} />
             )}
 
             {job.phase === 'error' && (
@@ -438,9 +451,10 @@ export default function V3App() {
       <HelpMenu onOpen={openPage} />
 
       {install && <InstallDialog target={install.target} name={install.name} parts={install.parts} plan={install.plan} onClose={() => setInstall(null)} />}
-      {noteOpen && <FeedbackNote target={noteTarget.current} onClose={() => setNoteOpen(false)} />}
+      {noteOpen && <FeedbackNote target={noteTarget.current} knownEmail={isSignedIn ? user?.primaryEmailAddress?.emailAddress ?? undefined : undefined} onClose={() => setNoteOpen(false)} />}
       {account && isSignedIn && <AccountDialog onClose={() => setAccount(false)} />}
       {auth && <AuthSheet view={auth} onClose={() => setAuth(null)} />}
+      {unlock && !auth && <AuthSheet view="sign-up" unlock={unlock} onClose={() => setUnlock(null)} />}
       {stopAsk && <StopDialog signedIn={!!isSignedIn} onKeep={() => setStopAsk(null)} onStop={() => { const go = stopAsk; setStopAsk(null); go(); }} />}
     </div>
   );

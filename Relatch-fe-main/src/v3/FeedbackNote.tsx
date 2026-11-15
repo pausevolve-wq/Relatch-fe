@@ -2,7 +2,10 @@
 // people trying Relatch without an account. V3's launch is about learning what people need, so instead of a
 // waitlist it reads as a handwritten note from the team asking how it went, what would make it better, and
 // (optionally) an email to write back to. Shown once per browser, after the free try's skill is downloaded
-// and the install guide is closed (V3App), never to a signed-in account.
+// and the install guide is closed (V3App), never to a signed-in account - except right after the unlock sheet
+// (2026-11-15): someone who just signed up there to download their free skill gets the note too. Then the email
+// field is not asked (Manas: only skip it when we already have their address); the account's address is sent
+// with the note instead, so the team can still write back.
 //
 // Where it goes: a SplitForms form of its OWN ("Relatch feedback"), apart from Contact's and the waitlist's.
 // One SplitForms form is one table; sharing one would mix the lists (ContactPage.tsx explains the waitlist
@@ -100,7 +103,7 @@ function PenCircle({ on }: { on: boolean }) {
   );
 }
 
-export function FeedbackNote({ target, onClose }: { target: string; onClose: () => void }) {
+export function FeedbackNote({ target, onClose, knownEmail }: { target: string; onClose: () => void; knownEmail?: string }) {
   const [stage, setStage] = useState<Stage>('writing');
   const [rating, setRating] = useState<Rating | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -172,8 +175,8 @@ export function FeedbackNote({ target, onClose }: { target: string; onClose: () 
   async function send() {
     if (stage !== 'writing') return;
     const note = feedback.trim();
-    const mail = email.trim();
-    if (!rating && !note && !mail) { setProblem('Circle one, write a line, or leave your email. Any of the three helps.'); return; }
+    const mail = knownEmail || email.trim();
+    if (!rating && !note && (knownEmail || !mail)) { setProblem(knownEmail ? 'Circle one or write a line. Either helps.' : 'Circle one, write a line, or leave your email. Any of the three helps.'); return; }
     if (mail && !EMAIL.test(mail)) { setProblem("That email doesn't look right."); return; }
     setProblem('');
     setFailed(false);
@@ -189,7 +192,7 @@ export function FeedbackNote({ target, onClose }: { target: string; onClose: () 
       feedback: note,
       email: mail,
       target,
-      source: 'v3-first-skill',
+      source: knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill',
       session_id: readStorage('rl_session_id') ?? '',
     });
     if (mail) body.set('replyto', mail);
@@ -301,6 +304,9 @@ export function FeedbackNote({ target, onClose }: { target: string; onClose: () 
                     />
                   </label>
 
+                  {knownEmail ? (
+                    <p data-fold className={cn('mt-4 font-sans text-[13.5px] leading-snug', ink2)}>We'll write back to <span className="ph-no-capture font-medium text-[var(--n-ink)]">{knownEmail}</span>, only about Relatch.</p>
+                  ) : (<>
                   <label data-fold className="mt-4 block">
                     <span className="text-[19px] font-bold">Can we write back? <span className={cn('font-normal', ink2)}>(optional)</span></span>
                     <input
@@ -319,6 +325,7 @@ export function FeedbackNote({ target, onClose }: { target: string; onClose: () 
                     />
                   </label>
                   <p data-fold className={cn('mt-2 font-sans text-[12.5px] leading-snug', ink2)}>Only about Relatch, and only now and then. No spam, ever.</p>
+                  </>)}
                   <input ref={bot} type="checkbox" name="botcheck" tabIndex={-1} aria-hidden="true" autoComplete="off" className="hidden" />
 
                   {(problem || failed) && (
