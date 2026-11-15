@@ -11,10 +11,10 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
 
-  // 2026-11-15 (V3 port): where V3 is served (src/v3/base.ts). '/v3/' while it is tested beside the current
-  // app; set to '/' at the flip. The current app (index.html) does not read it.
+  // 2026-11-15 (V3 port): where V3 is served (src/v3/base.ts). It was '/v3/' while V3 was tested beside the
+  // old app; '/' since the flip (step 3.5), when V3 became the app.
   define: {
-    __V3_BASE__: JSON.stringify('/v3/'),
+    __V3_BASE__: JSON.stringify('/'),
   },
 
   // Keep /*! licence */ comments in the bundle: src/v3/auth adapts MIT code (signup-buddy), whose notice has to
@@ -23,10 +23,12 @@ export default defineConfig({
 
   build: {
     chunkSizeWarningLimit: 2000,
-    // Two pages: the current app (index.html, served at /) and V3 (v3.html, served at /v3 by vercel.json)
+    // Since the flip (2026-11-15, step 3.5) only V3 is built: v3.html, which vercel.json serves at every path.
+    // The old app's page (index.html -> src/main.tsx, App.tsx) stays in the repo but is NOT built: Vercel
+    // serves a real file before any rewrite, so a built index.html would keep answering "/" with the old app.
+    // Rollback: Vercel's instant rollback to the deployment before the flip, or revert this commit.
     rollupOptions: {
       input: {
-        main: fileURLToPath(new URL('./index.html', import.meta.url)),
         v3: fileURLToPath(new URL('./v3.html', import.meta.url)),
       },
     },

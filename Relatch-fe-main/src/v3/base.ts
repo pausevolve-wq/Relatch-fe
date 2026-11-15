@@ -1,6 +1,6 @@
-// Where V3 is served (2026-11-15, V3 port step 3.3). '/v3/' while it is tested on production beside the current
-// app (Relatch-fe's vite.config.ts defines __V3_BASE__); '/' in the sandbox, the claude.ai artifact, and after the
-// flip (step 3.5: change the one define). Every URL V3 builds for itself comes from here: the OAuth return
+// Where V3 is served (2026-11-15, V3 port step 3.3). '/v3/' while it was tested on production beside the old app
+// (Relatch-fe's vite.config.ts defines __V3_BASE__); '/' since the flip (step 3.5), and in the sandbox and the
+// claude.ai artifact. Every URL V3 builds for itself comes from here: the OAuth return
 // (auth/clerkAuth.ts), the sign-out landing (main.tsx) and which addresses are the app (ErrorScreens.tsx).
 declare const __V3_BASE__: string | undefined;
 export const V3_BASE: string = typeof __V3_BASE__ === 'string' ? __V3_BASE__ : '/';

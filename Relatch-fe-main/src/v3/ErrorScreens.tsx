@@ -26,7 +26,8 @@ const secondary = cn('inline-flex h-11 items-center justify-center rounded-full 
 // ---- Which addresses are the app ---------------------------------------------------------------------------
 // Everything else is a 404. AT THE PORT: add every real path the app serves, above all the OAuth return page
 // (sandboxAuth.ts: "V3 needs an SSO callback page for the return"), or Google/GitHub sign-in lands on the 404.
-const APP_PATHS = ['/', '/index.html', '/sso-callback'];
+// 2026-11-15 (flip): the legal pages have addresses of their own, for Clerk's consent links (V3App opens them)
+const APP_PATHS = ['/', '/index.html', '/sso-callback', '/privacy-policy', '/terms-of-service', '/legal'];
 // The sandbox and the claude.ai artifact run at addresses of their own (/v3.html, /artifact.html, the artifact
 // frame), so there a wrong address is simulated: the sandbox bar's "Open a wrong address" stores one.
 const SANDBOX = !!import.meta.env.VITE_SANDBOX;
