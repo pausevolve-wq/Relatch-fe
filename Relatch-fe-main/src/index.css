@@ -1,4 +1,10 @@
 @import "tailwindcss";
+/* 2026-11-15 (V3 port): Tailwind scans the whole project, so without these lines this stylesheet would also
+   carry every class V3 uses. V3 has its own (src/v3/v3.css); the current app's CSS stays as it was. */
+@source not "./v3";
+@source not "./engine";
+@source not "./components";
+@source not "./lib";
 
 /* =========================================================
    Relatch v2.1 — Agent Selector animations

@@ -3,6 +3,8 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
+    { "source": "/v3", "destination": "/v3.html" },
+    { "source": "/v3/(.*)", "destination": "/v3.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
