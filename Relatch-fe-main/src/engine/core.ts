@@ -1384,7 +1384,9 @@ export function fixAiYamlFrontmatter(content: string): string {
 }
 
 // agents (2026-11-02): on the Agents target, the template (lens) and Codex shape the backend combined.
-export interface EnrichMeta { plan?: any; content?: any; model?: string; latencyMs: number; agents?: { lens?: string; shape?: string } }
+// `preview` (2026-11-17): set when the server returned only a preview of a signed-out free try
+// (ANON_PREVIEW_ONLY=on); claimId is null when the server could not hold the full skill for unlocking.
+export interface EnrichMeta { plan?: any; content?: any; model?: string; latencyMs: number; agents?: { lens?: string; shape?: string }; preview?: { claimId: string | null; sections: number; lockedSections: number } }
 
 // V3 progress events from parseFile, in order. Each carries only facts the code actually has at
 // that moment, so the UI never narrates work that has not happened.
@@ -1528,7 +1530,7 @@ export async function enrichWithAI(rawText: string, category: string, fileName: 
     captureEvent('skill_generation_completed', { template_used: template, model_used: data.model, latency_ms: Date.now() - genStartedAt, session_id: rlSessionId });
     // V3: hand the server's own analysis (the Jev `plan` and the `content` selection summary,
     // both enums/numbers only) to the UI that shows the reasoning steps. Optional; V2 never passes it.
-    onMeta?.({ plan: data.plan, content: data.content, model: data.model, latencyMs: Date.now() - genStartedAt, ...(data.agents ? { agents: data.agents } : {}) });
+    onMeta?.({ plan: data.plan, content: data.content, model: data.model, latencyMs: Date.now() - genStartedAt, ...(data.agents ? { agents: data.agents } : {}), ...(data.preview && typeof data.preview === 'object' ? { preview: { claimId: typeof data.preview.claimId === 'string' ? data.preview.claimId : null, sections: Number(data.preview.sections) || 0, lockedSections: Number(data.preview.lockedSections) || 0 } } : {}) });
     if (data.model === 'deterministic-fallback' && target === 'codex') {
       return { content: fixAiYamlFrontmatter(data.enriched), degraded: true };
     }

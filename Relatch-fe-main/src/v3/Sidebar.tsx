@@ -427,7 +427,7 @@ export function Sidebar({ skills, activeId, building, buildingActive, open, coll
         </>) : (
           // The free try is not kept: say so where the list would be, so nobody looks for it later.
           <div className="min-h-0 flex-1 px-5 pt-6">
-            <p className="text-[13px] leading-[1.55] text-fg-3">Skills you make are kept here once you have an account. The free try isn't saved, so download it before you leave.</p>
+            <p className="text-[13px] leading-[1.55] text-fg-3">Skills you make are kept here once you have an account. Create one to unlock your free skill: it waits 24 hours.</p>
           </div>
         )}
 
