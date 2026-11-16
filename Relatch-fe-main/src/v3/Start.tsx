@@ -291,7 +291,7 @@ export function Start({ target, onTarget, onFiles, onSample, compact = false }: 
           <button onClick={onSample} className="relative inline-flex items-center gap-2 rounded-full border border-line bg-ink-2 py-1.5 pl-3 pr-3.5 text-fg-2 transition-colors hover:border-line-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-white/60">
             <FileTextIcon size={15} />Try it with a sample
           </button>
-          <span className="text-fg-3">Your first skill is free, no sign-up</span>
+          <span className="text-fg-3">Try it free, no sign-up</span>
         </div>
       )}
     </section>
