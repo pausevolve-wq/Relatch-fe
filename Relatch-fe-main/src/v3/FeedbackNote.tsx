@@ -7,14 +7,16 @@
 // field is not asked (Manas: only skip it when we already have their address); the account's address is sent
 // with the note instead, so the team can still write back.
 //
-// Where it goes: a SplitForms form of its OWN ("Relatch feedback"), apart from Contact's and the waitlist's.
-// One SplitForms form is one table; sharing one would mix the lists (ContactPage.tsx explains the waitlist
-// case). The key is SplitForms' PUBLIC submit key, VITE_SPLITFORMS_FEEDBACK_KEY. Without it in production the
-// note never shows (NOTE_READY), so no note is ever written into nowhere. SplitForms' free plan is 500
-// submissions in all, ever, shared by every form (splitforms.com/llms.txt, 2026-11-09).
+// Where it goes: a form of its OWN ("Relatch feedback"), apart from Contact's and the waitlist's.
+// One form is one table; sharing one would mix the lists (ContactPage.tsx explains the waitlist
+// case). 2026-11-17: moved from SplitForms to WebForms. The key is the form's PUBLIC submit key (wft_...),
+// VITE_WEBFORMS_FEEDBACK_KEY. Without it in production the note never shows (NOTE_READY), so no note is ever
+// written into nowhere. WebForms' free plan: 300 submissions a month, shared by every form, resetting on the 1st
+// (was SplitForms: 500 in all, ever, VITE_SPLITFORMS_FEEDBACK_KEY). Success is read from WebForms' `ok: true`.
 // Nothing from the document is sent (no skill or file names): only the three answers, the agent, and the
-// funnel's session id. Spam: SplitForms' honeypot `botcheck` (as Contact). No native <form> submit: the
-// claude.ai artifact frame has no allow-forms.
+// funnel's session id. Spam: WebForms' honeypot `_gotcha` (as Contact). NOT its time trap: a send under about
+// 2 seconds is rejected outright with no copy kept, and "Loved it" then Send is two taps. No native <form>
+// submit: the claude.ai artifact frame has no allow-forms.
 //
 // The ending: the note folds small and flies into the Relatch mark, which opens to catch it and latches shut
 // with its full success turn (MarkBuddy `turns`), then the thank-you writes itself in. Reduced motion: the
@@ -25,12 +27,12 @@ import { gsap } from 'gsap';
 import { XIcon } from '@phosphor-icons/react';
 import { MarkBuddy, type BuddyMood } from './auth/MarkBuddy';
 import { EMAIL } from './auth/emailCode';
-import { SPLITFORMS_ENDPOINT, readStorage } from '@/engine/core';
+import { readStorage, webformsUrl } from '@/engine/core';
 import { captureEvent } from '../analytics';
 import { cn } from '@/lib/utils';
 
-const FEEDBACK_KEY = (import.meta.env.VITE_SPLITFORMS_FEEDBACK_KEY as string | undefined)?.trim()
-  // The sandbox's mock backend answers every SplitForms call, so any key does there
+const FEEDBACK_KEY = (import.meta.env.VITE_WEBFORMS_FEEDBACK_KEY as string | undefined)?.trim()
+  // The sandbox's mock backend answers the form calls, so any key does there
   || (import.meta.env.VITE_SANDBOX ? 'sandbox-feedback-key' : '');
 /** False in a production build without the feedback form's key: the note is never offered */
 export const NOTE_READY = !!FEEDBACK_KEY;
@@ -51,7 +53,7 @@ const RATINGS = [
   ['not-quite', 'Not quite'],
 ] as const;
 type Rating = (typeof RATINGS)[number][0];
-const MAX = 3000; // SplitForms keeps 10 KB a field; this stays well clear
+const MAX = 3000; // a note, not an essay (SplitForms cut fields at 10 KB; this stayed well clear)
 
 const hand = 'font-hand'; // v3.css: Kalam, a pen hand that also has Devanagari
 
@@ -180,26 +182,27 @@ export function FeedbackNote({ target, onClose, knownEmail }: { target: string; 
     if (mail && !EMAIL.test(mail)) { setProblem("That email doesn't look right."); return; }
     setProblem('');
     setFailed(false);
-    // A bot ticked the honeypot: it's thanked, and nothing is sent
-    if (bot.current?.checked) { await landNote(); return; }
+    // A bot filled the honeypot: it's thanked, and nothing is sent
+    if (bot.current?.value) { await landNote(); return; }
     setStage('sending');
     const label = RATINGS.find(([r]) => r === rating)?.[1] ?? '';
+    // Underscore fields steer WebForms and are not stored as data
     const body = new URLSearchParams({
-      access_key: FEEDBACK_KEY,
-      subject: `Relatch note${label ? `: ${label}` : ''}`,
-      from_name: 'Relatch feedback note',
+      _subject: `Relatch note${label ? `: ${label}` : ''}`,
+      _gotcha: '',
       rating: label,
       feedback: note,
-      email: mail,
       target,
       source: knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill',
       session_id: readStorage('rl_session_id') ?? '',
     });
-    if (mail) body.set('replyto', mail);
+    // Only with an address: an empty email field, or an empty _replyto, could be refused as invalid
+    if (mail) { body.set('email', mail); body.set('_replyto', mail); }
     try {
-      const res = await fetch(SPLITFORMS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: body.toString() });
+      const res = await fetch(webformsUrl(FEEDBACK_KEY), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: body.toString() });
       const json = await res.json().catch(() => null);
-      if (!res.ok || json?.success === false) throw new Error('not stored');
+      // WebForms answers { ok: true } on success (also when held at the monthly limit), { ok: false } on an error
+      if (!res.ok || json?.ok !== true) throw new Error('not stored');
     } catch {
       setStage('writing');
       setFailed(true);
@@ -326,7 +329,7 @@ export function FeedbackNote({ target, onClose, knownEmail }: { target: string; 
                   </label>
                   <p data-fold className={cn('mt-2 font-sans text-[12.5px] leading-snug', ink2)}>Only about Relatch, and only now and then. No spam, ever.</p>
                   </>)}
-                  <input ref={bot} type="checkbox" name="botcheck" tabIndex={-1} aria-hidden="true" autoComplete="off" className="hidden" />
+                  <input ref={bot} type="text" name="_gotcha" tabIndex={-1} aria-hidden="true" autoComplete="off" className="hidden" />
 
                   {(problem || failed) && (
                     <p data-fold role="alert" className="mt-3 text-[17px] leading-snug text-[var(--n-error)]">

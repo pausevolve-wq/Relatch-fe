@@ -1682,6 +1682,10 @@ Audience context:
 - Care about clarity over jargon`;
 export const SPLITFORMS_ENDPOINT = ((import.meta.env.VITE_SPLITFORMS_ENDPOINT as string | undefined)?.trim() || 'https://splitforms.com/api/submit');
 export const SPLITFORMS_ACCESS_KEY = ((import.meta.env.VITE_SPLITFORMS_ACCESS_KEY as string | undefined)?.trim() || 'f277a53be64748cc802c0de0c130951f');
+// Contact and the feedback note post to WebForms (2026-11-17), not SplitForms: 300 free submissions a month that
+// reset, instead of 500 ever. The waitlist above stays on SplitForms (its duplicate check reads SplitForms' API).
+// Each form's endpoint is its PUBLIC submit key (wft_...) on this host; the secret API key (wf_live_...) is never used here.
+export const webformsUrl = (key: string) => `https://send.webforms.to/${encodeURIComponent(key)}`;
 export const WAITLIST_CHECK_URL = 'https://claudly-proxy.vercel.app/api/waitlist-check';
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

@@ -54,7 +54,7 @@ function Privacy() {
       <P>We use this account information solely to authenticate you, scope your uploads and outputs to your account, and provide essential account-related communication. We do not sell or rent account data.</P>
 
       <H3>2.3 Waitlist, Feedback and Contact Submissions</H3>
-      <P>Relatch uses SplitForms to handle waitlist, feedback and contact submissions on the landing page and in the app. If you choose to submit your email address, a message or feedback through one of these forms, that submission is delivered via SplitForms and used solely to follow up with you about Relatch and to improve it. Leaving an email with feedback is optional. We will not send marketing emails unrelated to Relatch. You can request removal of your email at any time by contacting us.</P>
+      <P>Relatch uses WebForms to handle feedback and contact submissions in the app, and SplitForms holds the sign-ups from our earlier waitlist. WebForms stores submissions on servers in Germany (EU) and may pass a message to an automated spam classifier before delivering it to us. If you choose to submit your email address, a message or feedback through one of these forms, that submission is delivered to us via the service named above and used solely to follow up with you about Relatch and to improve it. Leaving an email with feedback is optional. We will not send marketing emails unrelated to Relatch. You can request removal of your email at any time by contacting us.</P>
 
       <H3>2.4 Uploaded Documents</H3>
       <P>Documents you upload (PDF, CSV, XML, DOCX, scanned images, and similar formats) are processed client-side where possible. When server-side processing is required, your content is transmitted to third-party AI and OCR providers solely for extraction and enrichment. We do not retain your uploaded files on our servers beyond what is reasonably needed to deliver the resulting output.</P>
@@ -106,7 +106,8 @@ function Privacy() {
         <li>OpenRouter / Groq — AI enrichment fallback</li>
         <li>TypeSafe Jev (via OpenRouter) — document classification and main-content detection before enrichment</li>
         <li>DeepSeek and GLM (Z.ai) models (via OpenRouter, zero-data-retention hosts only) — enrichment for complex documents</li>
-        <li>SplitForms (waitlist, feedback and contact flows)</li>
+        <li>WebForms (feedback and contact forms, hosted in Germany)</li>
+        <li>SplitForms (earlier waitlist sign-ups)</li>
         <li>Vercel (hosting and edge delivery)</li>
         <li>Neon (a Databricks company) — skill history database for signed-in users</li>
         <li>Upstash — trial tokens, abuse prevention and usage limits</li>
@@ -115,7 +116,7 @@ function Privacy() {
       <P>Each of these services operates under its own privacy policy. We encourage you to review them independently.</P>
 
       <H2>6. Data Retention</H2>
-      <P>We retain account information for as long as your account is active. Uploaded documents are not kept beyond what is reasonably needed to deliver the resulting output. Your skill history is kept until you delete it or your account, and deleted skills can remain in our encrypted backups for up to 30 days (see 2.6). Trial tokens expire after 10 minutes, IP-based abuse counters after one hour, usage counters within 8 days, and security logs after 30 days (see 2.5). Analytics data is retained by Google Analytics and PostHog under their respective retention policies. Waitlist, feedback and contact-form submissions are retained by SplitForms for up to 30 days, or until you request removal, whichever is sooner.</P>
+      <P>We retain account information for as long as your account is active. Uploaded documents are not kept beyond what is reasonably needed to deliver the resulting output. Your skill history is kept until you delete it or your account, and deleted skills can remain in our encrypted backups for up to 30 days (see 2.6). Trial tokens expire after 10 minutes, IP-based abuse counters after one hour, usage counters within 8 days, and security logs after 30 days (see 2.5). Analytics data is retained by Google Analytics and PostHog under their respective retention policies. Feedback and contact-form submissions are retained by WebForms for up to 30 days, or until you request removal, whichever is sooner; the copy delivered to our inbox is kept only as long as we need it to follow up with you. Waitlist sign-ups are kept by SplitForms until you request removal.</P>
 
       <H2>7. Your Rights</H2>
       <P>You can delete any saved skill, or clear your whole skill history, directly in the app at any time. Deleting your account also deletes your skill history. You can also request deletion of your account, your waitlist email, or any contact submission at any time by emailing us at <Mail />. We will action reasonable requests within a reasonable timeframe.</P>
@@ -174,7 +175,7 @@ function Terms() {
       <P>The Relatch name, logo, interface design, processing logic, internal templates, domain knowledge rules, and all related intellectual property remain the exclusive property of the Relatch team. Nothing in these terms grants you any rights to these assets.</P>
 
       <H2>7. Third-Party Services</H2>
-      <P>Relatch integrates with third-party services including Clerk (authentication), Google OAuth and GitHub OAuth (sign-in), Google's Gemini API, LlamaParse (LlamaIndex), Datalab, OpenRouter and Groq (AI enrichment fallback), TypeSafe Jev via OpenRouter (document classification), DeepSeek and GLM (Z.ai) models via OpenRouter (enrichment for complex documents), SplitForms (waitlist, feedback and contact forms), Google Analytics, Google Tag Manager, PostHog, and Vercel (hosting). Your use of Relatch is subject to the terms and privacy policies of these services where applicable. Relatch is not responsible for the availability, accuracy, or conduct of any third-party service.</P>
+      <P>Relatch integrates with third-party services including Clerk (authentication), Google OAuth and GitHub OAuth (sign-in), Google's Gemini API, LlamaParse (LlamaIndex), Datalab, OpenRouter and Groq (AI enrichment fallback), TypeSafe Jev via OpenRouter (document classification), DeepSeek and GLM (Z.ai) models via OpenRouter (enrichment for complex documents), WebForms (feedback and contact forms), SplitForms (waitlist), Google Analytics, Google Tag Manager, PostHog, and Vercel (hosting). Your use of Relatch is subject to the terms and privacy policies of these services where applicable. Relatch is not responsible for the availability, accuracy, or conduct of any third-party service.</P>
 
       <H2>8. Disclaimers</H2>
       <P>Relatch is provided on an "as is" and "as available" basis without warranties of any kind, express or implied. We do not warrant that Relatch will be uninterrupted, error-free, or that outputs will meet your requirements or expectations.</P>

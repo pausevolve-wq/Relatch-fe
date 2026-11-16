@@ -1,31 +1,33 @@
 // Contact: a page of its own (like the API platform was, until 2026-11-03: no sidebar, one way back) with a short form, instead
 // of a mailto: link that opens whichever mail app the person may not even use.
 //
-// Where a message goes: a SplitForms form of its OWN, not the waitlist's. One SplitForms form is one list.
+// Where a message goes: a form of its OWN, not the waitlist's. One form is one list.
 // Sharing the waitlist's would put messages in the waitlist, make its duplicate check (api/waitlist-check)
 // tell someone who wrote in that they are already signed up, and land messages in the waitlist's Airtable
-// archive. The access key is SplitForms' PUBLIC submit key (safe in the browser, like the waitlist's); the
-// private read token never comes near the frontend.
+// archive.
 //
-// PRODUCTION NEEDS THE KEY: create a second form in SplitForms ("Relatch contact"), set its notification
-// email, and put its access key in VITE_SPLITFORMS_CONTACT_KEY. Until then every send falls back to the
-// email address below. So does SplitForms' free-plan limit: 500 submissions in all, ever, across every
-// form; past it SplitForms answers 429 and stores nothing.
+// 2026-11-17: moved from SplitForms to WebForms (webforms.to), the "Relatch contact" form. Its key is the
+// form's PUBLIC submit key (wft_..., safe in the browser), in VITE_WEBFORMS_CONTACT_KEY; the secret API key
+// (wf_live_...) never comes near the frontend. Without the key every send falls back to the email address
+// below. WebForms' free plan: 300 submissions a month, resetting on the 1st; past it they are held 7 days
+// (the reply is still ok) until released in the dashboard. Success is read from WebForms' `ok: true`, never
+// assumed from a 200 alone. (Was: SplitForms' `success` field, and 500 submissions ever, VITE_SPLITFORMS_CONTACT_KEY.)
 //
-// Spam: SplitForms' honeypot, `botcheck`, a hidden checkbox people never tick. Its other trap,
-// `form_loaded_at`, is not used: its format is undocumented, and a wrong guess would send real messages
-// to the spam queue, which sends no notification.
+// Spam: WebForms' honeypot `_gotcha`, a hidden text field people never fill, and its time trap `_start_time`
+// (when the page opened): a send under about 2 seconds is rejected outright. Writing an email and a
+// 10-character message takes longer than that. (SplitForms' `botcheck` checkbox before; its
+// `form_loaded_at` trap was never used: its format was undocumented.)
 // Sent without a native <form> submit: the claude.ai artifact frame has no allow-forms (as ApiPlatform found, removed 2026-11-03).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useUser } from '@clerk/react';
 import { ArrowLeftIcon, PaperPlaneTiltIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { RelatchMark } from './RelatchMark';
-import { EMAIL_REGEX, SPLITFORMS_ENDPOINT } from '@/engine/core';
+import { EMAIL_REGEX, webformsUrl } from '@/engine/core';
 import { cn } from '@/lib/utils';
 
-const CONTACT_KEY = (import.meta.env.VITE_SPLITFORMS_CONTACT_KEY as string | undefined)?.trim() || '';
+const CONTACT_KEY = (import.meta.env.VITE_WEBFORMS_CONTACT_KEY as string | undefined)?.trim() || '';
 export const CONTACT_EMAIL = 'hello@relatch.online';
-const MAX = 5000; // SplitForms keeps 10 KB a field and cuts the rest; 5,000 characters stays clear of that
+const MAX = 5000; // a long message, still small enough for a notification email (SplitForms cut fields at 10 KB)
 
 const TOPICS = [
   ['question', 'A question', 'What would you like to know?'],
@@ -120,6 +122,7 @@ export function ContactPage({ onBack, backLabel }: { onBack: () => void; backLab
   const [tried, setTried] = useState(false);
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
   const bot = useRef<HTMLInputElement>(null);
+  const openedAt = useRef(Date.now()); // WebForms' time trap reads this as _start_time
   const emailEl = useRef<HTMLInputElement>(null);
   const messageEl = useRef<HTMLTextAreaElement>(null);
   const card = useRef<HTMLDivElement>(null);
@@ -161,25 +164,29 @@ export function ContactPage({ onBack, backLabel }: { onBack: () => void; backLab
     if (emailError) { emailEl.current?.focus(); return; }
     if (messageError) { messageEl.current?.focus(); return; }
     if (state === 'sending') return;
-    // A bot ticked the honeypot: it is told the message went, and nothing is sent.
-    if (bot.current?.checked) { await finish(); return; }
+    // A bot filled the honeypot: it is told the message went, and nothing is sent.
+    if (bot.current?.value) { await finish(); return; }
+    // No form key in this build: nowhere to send, so straight to the email fallback.
+    if (!CONTACT_KEY) { setState('failed'); return; }
     setState('sending');
     const topicLabel = TOPICS.find(([t]) => t === topic)![1];
+    // Underscore fields steer WebForms and are not stored as data (_from_name is ignored on its free plan, so not sent)
     const body = new URLSearchParams({
-      access_key: CONTACT_KEY,
-      subject: `Relatch: ${topicLabel}${name.trim() ? ` from ${name.trim()}` : ''}`,
-      from_name: 'Relatch contact form',
+      _subject: `Relatch: ${topicLabel}${name.trim() ? ` from ${name.trim()}` : ''}`,
+      _replyto: email.trim(),
+      _start_time: String(openedAt.current),
+      _gotcha: '',
       email: email.trim(),
-      replyto: email.trim(),
       name: name.trim(),
       topic: topicLabel,
       message: message.trim(),
       account: isSignedIn ? 'signed in' : 'not signed in',
     });
     try {
-      const res = await fetch(SPLITFORMS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: body.toString() });
+      const res = await fetch(webformsUrl(CONTACT_KEY), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: body.toString() });
       const json = await res.json().catch(() => null);
-      if (res.ok && json?.success !== false) await finish(); else setState('failed');
+      // WebForms answers { ok: true } on success (also when held at the monthly limit), { ok: false } on an error
+      if (res.ok && json?.ok === true) await finish(); else setState('failed');
     } catch {
       setState('failed');
     }
@@ -240,7 +247,7 @@ export function ContactPage({ onBack, backLabel }: { onBack: () => void; backLab
               </label>
 
               {/* The honeypot: hidden from people and from screen readers, so only a bot fills it. */}
-              <input ref={bot} type="checkbox" name="botcheck" tabIndex={-1} aria-hidden="true" autoComplete="off" className="hidden" />
+              <input ref={bot} type="text" name="_gotcha" tabIndex={-1} aria-hidden="true" autoComplete="off" className="hidden" />
 
               {state === 'failed' && (
                 <p role="alert" className="flex items-start gap-2 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] px-4 py-3 text-[13.5px] leading-snug text-amber-100">
