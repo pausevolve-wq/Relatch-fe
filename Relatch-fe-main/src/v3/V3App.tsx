@@ -248,9 +248,11 @@ export default function V3App() {
   }, [isSignedIn]);
   useEffect(() => {
     if (!isSignedIn) return;
-    if (lockedKey || (job.phase === 'idle' && readPendingClaim())) { void runClaim(); return; }
+    // No preview on screen but one waiting in this tab: an empty start (back from Google or GitHub), or the "free
+    // skill is used" screen they signed up from after a reload. Either way the set is brought back from the claim.
+    if (lockedKey || ((job.phase === 'idle' || job.phase === 'error') && readPendingClaim())) { void runClaim(); return; }
     if (wantAction.current) { setResume(wantAction.current); wantAction.current = null; }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per sign-in, per new preview, per empty start
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per sign-in, per new preview, per empty or error start
   }, [isSignedIn, lockedKey, job.phase]);
   useEffect(() => { if (job.phase !== 'done') window.scrollTo({ top: 0, behavior: 'smooth' }); }, [job.phase]);
 
