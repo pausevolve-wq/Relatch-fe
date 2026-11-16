@@ -10,7 +10,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Show, UserButton, useUser } from '@clerk/react';
 import { ArrowClockwiseIcon, SidebarSimpleIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react';
 import { Start } from './Start';
-import { JobStage, type Adding, type Part, type Plan } from './JobStage';
+import { JobStage, type Adding, type Lock, type Part, type Plan } from './JobStage';
+import { readPendingClaim, setPendingAction } from './claim';
 import { Lockup, Sidebar } from './Sidebar';
 import { InstallDialog } from './InstallDialog';
 import { AccountDialog } from './AccountDialog';
@@ -38,7 +39,7 @@ import { AuthSheet, type Unlock } from './auth/AuthSheet';
 import { appPath, pathInApp } from './base';
 import { RelatchMark } from './RelatchMark';
 import { stripFrontmatter } from './SkillMarkdown';
-import { useSkillJob, MAX_FILES, type JobItem } from './useSkillJob';
+import { useSkillJob, MAX_FILES, type ClaimError, type JobItem } from './useSkillJob';
 import { useSkillHistory, type SavedSkill } from './useSkillHistory';
 import { resetTime } from './usePlan';
 import { useUnfold } from './useUnfold';
@@ -94,7 +95,16 @@ function itemNote(i: JobItem) {
 }
 
 // The skill files of the job on screen, or of a skill reopened from the history.
-const liveParts = (items: JobItem[]): Part[] => items.map((i) => ({ key: i.id, name: i.result ? skillName(i.result.content) : i.fileName.replace(/\.[^.]+$/, ''), content: i.result?.content ?? '', degraded: !!i.result?.degraded, status: i.status, note: i.status === 'error' ? itemNote(i) : null, fileName: i.fileName, steps: i.steps, seconds: i.result?.seconds }));
+const liveParts = (items: JobItem[]): Part[] => items.map((i) => ({ key: i.id, name: i.result ? skillName(i.result.content) : i.fileName.replace(/\.[^.]+$/, ''), content: i.result?.content ?? '', degraded: !!i.result?.degraded, status: i.status, note: i.status === 'error' ? itemNote(i) : null, fileName: i.fileName, steps: i.steps, seconds: i.result?.seconds, locked: !!i.result?.locked }));
+
+// Why the free skill didn't unlock once they were in (useSkillJob's claim). Every one leaves it a preview.
+const CLAIM_MESSAGES: Record<ClaimError, string> = {
+  limit: "This account has already unlocked its free skill, so this one stays a preview. Make it again from your account: it's one of today's 3.",
+  gone: "This free skill can't be unlocked any more (they're kept for 24 hours). Make it again from your account: it's one of today's 3.",
+  taken: 'This free skill was unlocked by another account.',
+  retry: "Couldn't unlock your skill just now. Try again in a moment.",
+  failed: "Couldn't unlock your skill. Make it again from your account: it's one of today's 3.",
+};
 const savedParts = (s: SavedSkill): Part[] => (s.files ?? [{ name: s.name, content: s.content, degraded: s.degraded }]).map((f, n) => ({ key: `${s.id}_${n}`, name: f.name, content: f.content, degraded: f.degraded, status: 'done' as const }));
 const FINISHED: Adding = { canAdd: false, left: 0, closed: 'This skill is finished. Start a new skill to build from more documents.', onAdd: () => {}, complete: () => {} };
 
@@ -144,7 +154,8 @@ export default function V3App() {
   const [resume, setResume] = useState<Unlock['action'] | null>(null);
   // The download that follows an unlock sign-up still earns the first-skill note (with their account's email)
   const fromUnlock = useRef(false);
-  const openSignUp = (u?: Unlock) => { if (u) setUnlock(u); else setAuth('sign-up'); };
+  // The action is also kept with the claim waiting in this tab (claim.ts), for a Google or GitHub sign-up
+  const openSignUp = (u?: Unlock) => { if (u) { setUnlock(u); setPendingAction(u.action); } else setAuth('sign-up'); };
   const [lastFiles, setLastFiles] = useState<File[]>([]);
   const job = useSkillJob(target);
   const history = useSkillHistory();
@@ -195,12 +206,52 @@ export default function V3App() {
   useEffect(() => { try { localStorage.setItem('relatch_v3_target', target); } catch { /* ignore */ } }, [target]);
   useEffect(() => { try { localStorage.setItem('relatch_v3_motion', motion ? 'on' : 'off'); } catch { /* ignore */ } }, [motion]);
   useEffect(() => { try { if (paused) localStorage.setItem('relatch_v3_history_paused', '1'); else localStorage.removeItem('relatch_v3_history_paused'); } catch { /* ignore */ } }, [paused]);
+  // The free try's unlock, once they're signed in (2026-11-17). With ANON_PREVIEW_ONLY on, what's on screen is a
+  // preview: its full skill is claimed first, and only then is the tapped action handed back (`resume`), so a
+  // preview is never downloaded or copied as if it were the skill. With the flag off there is nothing to claim
+  // and the action carries on at once, as before.
+  const lockedKey = job.items.filter((i) => i.status === 'done' && i.result?.locked).map((i) => i.id).join(',');
+  const [lock, setLock] = useState<Lock | null>(null);
+  const claiming = useRef(false);
+  const wantAction = useRef<Unlock['action'] | null>(null);
+  const runClaim = async () => {
+    if (claiming.current) return;
+    claiming.current = true;
+    const live = !!lockedKey;
+    setLock({ state: 'claiming' });
+    // Once unlocked it is this account's skill, kept in the history like any other (unless paused). Set before
+    // the claim lands so the save can't miss it; the history never keeps a set while any of it is locked.
+    ownJob.current = !paused;
+    kept.current = '';
+    const r = await job.claim();
+    claiming.current = false;
+    if (r.ok) {
+      if (!live) { setViewing(null); setAtHome(false); setPage(null); setLiveId(null); }
+      setLock(null);
+      const a = r.action ?? wantAction.current;
+      wantAction.current = null;
+      if (a) setResume(a);
+      return;
+    }
+    wantAction.current = null;
+    const message = CLAIM_MESSAGES[r.error];
+    setLock({ state: 'failed', message, ...(r.error === 'retry' ? { retry: () => { void runClaim(); } } : {}) });
+    // Nothing on screen to say it on (back from a Google or GitHub sign-up): the corner notice
+    if (!live) setNotice(message);
+  };
   useEffect(() => {
     if (!isSignedIn) return;
     setAuth(null);
-    // In from the unlock sheet: close it and let the preview carry on with what they tapped
-    setUnlock((u) => { if (u) setResume(u.action); return null; });
+    // In from the unlock sheet: close it; what they tapped waits for the unlock (or carries on if nothing is locked)
+    if (unlock) { wantAction.current = unlock.action; setUnlock(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the sheet as it was at sign-in
   }, [isSignedIn]);
+  useEffect(() => {
+    if (!isSignedIn) return;
+    if (lockedKey || (job.phase === 'idle' && readPendingClaim())) { void runClaim(); return; }
+    if (wantAction.current) { setResume(wantAction.current); wantAction.current = null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per sign-in, per new preview, per empty start
+  }, [isSignedIn, lockedKey, job.phase]);
   useEffect(() => { if (job.phase !== 'done') window.scrollTo({ top: 0, behavior: 'smooth' }); }, [job.phase]);
 
   // A finished skill goes into the history: the skill files only, never the documents behind them. A
@@ -214,6 +265,8 @@ export default function V3App() {
   useEffect(() => {
     if (job.phase !== 'done' || !ownJob.current) return;
     const done = job.items.filter((i) => i.status === 'done' && i.result);
+    // A preview is not the skill: it is kept once it is unlocked (runClaim), never before
+    if (done.some((i) => i.result!.locked)) return;
     const sig = done.map((i) => i.id).join(',');
     if (!done.length || kept.current === sig) return;
     kept.current = sig;
@@ -429,7 +482,7 @@ export default function V3App() {
             <JobStage key={saved.id} saved phase="done" parts={savedParts(saved)} target={saved.target} signedIn={!!isSignedIn} adding={FINISHED} onInstall={(name, plan) => downloaded(saved.id, saved.target, name, plan, savedParts(saved))} onAnother={() => guard(home)} onSignUp={openSignUp} />
           ) : (<>
             {(job.phase === 'thinking' || job.phase === 'done') && (
-              <JobStage phase={job.phase} parts={liveParts(job.items)} target={job.target} signedIn={!!isSignedIn} adding={{ canAdd: job.canAdd, left: job.left, closed: job.closed, onAdd: addFiles, complete: job.complete }} onInstall={(name, plan) => downloaded(liveKey, job.target, name, plan, liveParts(job.items))} onAnother={() => guard(home)} onSignUp={openSignUp} resume={resume} onResumed={() => { fromUnlock.current = resume === 'download'; setResume(null); }} />
+              <JobStage phase={job.phase} parts={liveParts(job.items)} target={job.target} signedIn={!!isSignedIn} adding={{ canAdd: job.canAdd, left: job.left, closed: job.closed, onAdd: addFiles, complete: job.complete }} onInstall={(name, plan) => downloaded(liveKey, job.target, name, plan, liveParts(job.items))} onAnother={() => guard(home)} onSignUp={openSignUp} resume={resume} onResumed={() => { fromUnlock.current = resume === 'download'; setResume(null); }} lock={lock} />
             )}
 
             {job.phase === 'error' && (
@@ -467,7 +520,7 @@ export default function V3App() {
       {noteOpen && <FeedbackNote target={noteTarget.current} knownEmail={isSignedIn ? user?.primaryEmailAddress?.emailAddress ?? undefined : undefined} onClose={() => setNoteOpen(false)} />}
       {account && isSignedIn && <AccountDialog onClose={() => setAccount(false)} />}
       {auth && <AuthSheet view={auth} onClose={() => setAuth(null)} />}
-      {unlock && !auth && <AuthSheet view="sign-up" unlock={unlock} onClose={() => setUnlock(null)} />}
+      {unlock && !auth && <AuthSheet view="sign-up" unlock={unlock} onClose={() => { setUnlock(null); setPendingAction(null); }} />}
       {stopAsk && <StopDialog signedIn={!!isSignedIn} onKeep={() => setStopAsk(null)} onStop={() => { const go = stopAsk; setStopAsk(null); go(); }} />}
     </div>
   );

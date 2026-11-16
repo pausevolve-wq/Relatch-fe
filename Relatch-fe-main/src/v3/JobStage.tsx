@@ -18,7 +18,7 @@
 // header).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { gsap } from 'gsap';
-import { CopyIcon, CheckIcon, DownloadSimpleIcon, ArrowRightIcon, CaretDownIcon, WarningCircleIcon, PlusIcon, FileTextIcon, CircleNotchIcon } from '@phosphor-icons/react';
+import { CopyIcon, CheckIcon, DownloadSimpleIcon, ArrowRightIcon, CaretDownIcon, WarningCircleIcon, PlusIcon, FileTextIcon, CircleNotchIcon, ArrowClockwiseIcon } from '@phosphor-icons/react';
 import { Thinking } from './Thinking';
 import { SkillMarkdown } from './SkillMarkdown';
 import { TARGET_NAME, TargetLogo } from './logos';
@@ -42,7 +42,11 @@ const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 // One skill file on the card: finished, still being written, or failed. `fileName` (the document it
 // came from) exists only while the job is live; a skill reopened from the history never had it stored.
-export interface Part { key: string; name: string; content: string; degraded: boolean; status: 'thinking' | 'done' | 'error'; note?: string | null; fileName?: string; steps?: Step[]; seconds?: number }
+export interface Part { key: string; name: string; content: string; degraded: boolean; status: 'thinking' | 'done' | 'error'; note?: string | null; fileName?: string; steps?: Step[]; seconds?: number; locked?: boolean }
+
+// A free try's preview on screen for someone now signed in (2026-11-17): its full skill is being fetched
+// (V3App's claim), or that didn't work. Until it arrives nothing downloads or copies: the preview is not the skill.
+export type Lock = { state: 'claiming' } | { state: 'failed'; message: string; retry?: () => void };
 
 // Whether more documents can join the skill on screen, how many, why not when they can't, and how to
 // complete it (on download).
@@ -75,7 +79,7 @@ function FileHeader({ yaml, agent }: { yaml: string; agent: string }) {
   );
 }
 
-function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, onSignUp, resume, onResumed }: { parts: Part[]; target: Target; signedIn: boolean; adding: Adding; pick: () => void; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void }) {
+function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, onSignUp, resume, onResumed, lock }: { parts: Part[]; target: Target; signedIn: boolean; adding: Adding; pick: () => void; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void; lock?: Lock | null }) {
   const done = useMemo(() => parts.filter((p) => p.status === 'done'), [parts]);
   const pending = parts.filter((p) => p.status === 'thinking').length;
   const [name, setName] = useState(() => done[0]?.name || 'Untitled skill');
@@ -177,9 +181,12 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
   // Signed out (the free skill, 2026-11-15 hybrid plan): it is a preview. Copy, Download and reading the whole
   // skill open the unlock sheet; once they're in, V3App hands the action back here (`resume`) and it carries on.
   const ask = (action: Unlock['action']): Unlock => ({ name, sections: done.reduce((n, p) => n + countSections(p.content), 0), agent: target === 'agents' ? 'Agent' : TARGET_NAME[target], action });
+  // Signed in, but what is on screen is still the preview (see Lock)
+  const locked = signedIn && done.some((p) => p.locked);
 
   const download = async () => {
     if (!signedIn) return onSignUp(ask('download'));
+    if (locked) return lock?.state === 'failed' ? lock.retry?.() : undefined;
     const r = await downloadSkill(target, name, skill);
     setNote(r.note);
     if (!r.saved) return;
@@ -192,19 +199,20 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
 
   const copy = async () => {
     if (!signedIn) return onSignUp(ask('copy'));
+    if (locked) return;
     try { await navigator.clipboard.writeText(claudeFile(skill[0].content, name)); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* clipboard blocked */ }
   };
 
   // Back from the unlock sheet, signed in: do what they tapped. (A copy may be refused by the browser this long
   // after the tap; then the button is right there.)
   useEffect(() => {
-    if (!signedIn || !resume) return;
+    if (!signedIn || !resume || locked) return;
     onResumed?.();
     if (resume === 'download') void download();
     else if (resume === 'copy') void copy();
     else setExpanded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per hand-back
-  }, [signedIn, resume]);
+  }, [signedIn, resume, locked]);
 
   // The skill scrolls inside the card. A wheel anywhere else on the page (the margins beside the card,
   // its header) scrolls it too, so the page still behaves like one long document.
@@ -279,18 +287,19 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
           </div>
           <div className="flex items-center gap-2">
             {single && (
-              <button onClick={copy} aria-label="Copy skill text" className={cn(pill, 'border border-line-2 px-3.5 text-fg hover:bg-white/[0.06]')}>
+              <button onClick={copy} disabled={locked} aria-label="Copy skill text" className={cn(pill, 'border border-line-2 px-3.5 text-fg hover:bg-white/[0.06] disabled:opacity-50 disabled:hover:bg-transparent')}>
                 {copied ? <CheckIcon size={16} weight="bold" /> : <CopyIcon size={16} />}<span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
               </button>
             )}
             {/* Waits for every document to finish, so a download is never missing the one being written. */}
-            <button onClick={download} disabled={pending > 0} className={cn(pill, 'whitespace-nowrap bg-white text-black hover:bg-white/90 disabled:opacity-60')}>
-              {pending > 0 ? <CircleNotchIcon size={17} className="animate-spin" /> : saved ? <CheckIcon size={17} weight="bold" /> : <DownloadSimpleIcon size={17} weight="bold" />}
-              {pending > 0 ? 'Writing…' : saved ? 'Downloaded' : plan.label}
+            <button onClick={download} disabled={pending > 0 || (locked && !(lock?.state === 'failed' && lock.retry))} className={cn(pill, 'whitespace-nowrap bg-white text-black hover:bg-white/90 disabled:opacity-60')}>
+              {pending > 0 || (locked && lock?.state !== 'failed') ? <CircleNotchIcon size={17} className="animate-spin" /> : locked && lock?.state === 'failed' && lock.retry ? <ArrowClockwiseIcon size={17} weight="bold" /> : saved && !locked ? <CheckIcon size={17} weight="bold" /> : <DownloadSimpleIcon size={17} weight="bold" />}
+              {pending > 0 ? 'Writing…' : locked ? (lock?.state !== 'failed' ? 'Unlocking…' : lock.retry ? 'Try again' : plan.label) : saved ? 'Downloaded' : plan.label}
             </button>
           </div>
         </div>
         {note && <p role="status" className="mt-3 flex items-start gap-2 text-[13px] text-amber-100"><WarningCircleIcon size={16} className="mt-px shrink-0" />{note}</p>}
+        {locked && lock?.state === 'failed' && <p role="status" className="mt-3 flex items-start gap-2 text-[13px] text-amber-100"><WarningCircleIcon size={16} className="mt-px shrink-0" />{lock.message}</p>}
       </header>
 
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-b-[27px] scroll-thin scroll-round-b">
@@ -330,7 +339,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
               {!expanded && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-ink-1 to-transparent" />}
             </div>
             <div data-in className="flex justify-center pb-4">
-              <button onClick={() => (signedIn || expanded ? setExpanded((x) => !x) : onSignUp(ask('read')))} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[14px] text-fg-2 hover:text-fg">
+              <button onClick={() => (signedIn || expanded ? setExpanded((x) => !x) : onSignUp(ask('read')))} disabled={locked} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[14px] text-fg-2 hover:text-fg disabled:opacity-50 disabled:hover:text-fg-2">
                 {expanded ? 'Show less' : 'Read the whole skill'}<CaretDownIcon size={14} className={cn('transition-transform', expanded && 'rotate-180')} />
               </button>
             </div>
@@ -357,7 +366,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
 }
 
 // `saved` is a skill reopened from the history: there is no thinking to watch, so it opens as the preview.
-export function JobStage({ phase, parts, target, signedIn, saved = false, adding, onInstall, onAnother, onSignUp, resume, onResumed }: { phase: 'thinking' | 'done'; parts: Part[]; target: Target; signedIn: boolean; saved?: boolean; adding: Adding; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void }) {
+export function JobStage({ phase, parts, target, signedIn, saved = false, adding, onInstall, onAnother, onSignUp, resume, onResumed, lock }: { phase: 'thinking' | 'done'; parts: Part[]; target: Target; signedIn: boolean; saved?: boolean; adding: Adding; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void; lock?: Lock | null }) {
   const card = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   // Mounted onto a skill that is already finished (a saved one, or the live one after coming back from
@@ -431,7 +440,7 @@ export function JobStage({ phase, parts, target, signedIn, saved = false, adding
       <div ref={card} className={cn('relative mx-auto w-full rounded-[28px] border border-line bg-ink-1', view === 'thinking' ? 'max-w-[620px]' : 'flex max-h-[max(320px,calc(100dvh-112px-env(safe-area-inset-top,0px)))] max-w-[clamp(980px,78%,1160px)] flex-col sm:max-h-[max(320px,calc(100dvh-144px-env(safe-area-inset-top,0px)))] lg:max-h-[max(320px,calc(100dvh-88px))]')}>
         {view === 'thinking' || !parts.some((p) => p.status === 'done')
           ? <Thinking steps={focus?.steps ?? []} running className="rounded-none border-0 bg-transparent" files={parts.length > 1 ? parts.map((p) => ({ name: p.fileName ?? p.name, status: p.status })) : undefined} footer={addButton} />
-          : <Preview parts={parts} target={target} signedIn={signedIn} adding={adding} pick={pick} onInstall={onInstall} onAnother={onAnother} onSignUp={onSignUp} resume={resume} onResumed={onResumed} />}
+          : <Preview parts={parts} target={target} signedIn={signedIn} adding={adding} pick={pick} onInstall={onInstall} onAnother={onAnother} onSignUp={onSignUp} resume={resume} onResumed={onResumed} lock={lock} />}
 
         {over && (
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-40 grid place-items-center rounded-[28px] border-2 border-dashed border-white/35 bg-ink/75 p-6 text-center backdrop-blur-sm">

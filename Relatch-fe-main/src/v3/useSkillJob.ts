@@ -15,13 +15,23 @@ import { captureEvent } from '../analytics';
 import { TARGET_NAME } from './logos';
 import { turnstileToken } from './turnstile';
 import type { Target } from './skillExport';
-import { parseFile, validateInputFile, setTokenGetter, _getToken, ANON_TOKEN_URL, ANON_TOKEN_STORAGE_KEY, ANON_TRIAL_USED_KEY, ENRICH_PROXY_URL, readStorage, type EngineStage, type EnrichMeta } from '@/engine/core';
+import { matchClaim, readPendingClaim, writePendingClaim, type ClaimAction } from './claim';
+import { parseFile, validateInputFile, setTokenGetter, _getToken, fixAiYamlFrontmatter, ANON_TOKEN_URL, ANON_TOKEN_STORAGE_KEY, ANON_TRIAL_USED_KEY, ENRICH_PROXY_URL, readStorage, type EngineStage, type EnrichMeta } from '@/engine/core';
 
 // Marks a set's sessionId complete on the server. Built in relatch#34 (api/session-complete.js, draft
 // until the V3 push). Contract: POST { sessionId } with the same auth as /api/enrich (Bearer, or the
 // trial token when signed out); 204, or 401 without auth. Afterwards /api/enrich refuses that sessionId
 // with 409 SESSION_COMPLETE.
 const SESSION_COMPLETE_URL = ENRICH_PROXY_URL.replace(/enrich$/, 'session-complete');
+// The free try's unlock (relatch api/claim.js, 2026-11-15 hybrid plan): POST { claimId, action } with the
+// signed-in account's Bearer; 200 { items: [{ enriched, target }] } in the order the server finished them.
+const CLAIM_URL = ENRICH_PROXY_URL.replace(/enrich$/, 'claim');
+
+// Why an unlock didn't happen. limit: this account already unlocked its one free skill. gone: nothing is held
+// any more (24 hours passed, or the server couldn't keep it). taken: another account unlocked it. retry: the
+// network or the server, worth another go. failed: the skills that came back don't match the ones on screen.
+export type ClaimError = 'limit' | 'gone' | 'taken' | 'retry' | 'failed';
+export type ClaimOutcome = { ok: true; action?: ClaimAction } | { ok: false; error: ClaimError };
 
 export type StepStatus = 'active' | 'done' | 'warn';
 export interface Step { id: string; label: string; detail?: string; status: StepStatus }
@@ -35,6 +45,9 @@ export interface JobResult {
   meta?: EnrichMeta;
   sourceChars: number;
   seconds: number;
+  // A signed-out free try's preview (ANON_PREVIEW_ONLY=on): `content` is not the whole skill until it is
+  // unlocked (claim()). claimId null: the server couldn't hold the full skill, so it can't be unlocked.
+  locked?: { claimId: string | null };
 }
 
 // One document in the set and the skill file being written from it.
@@ -87,6 +100,9 @@ export function useSkillJob(target: Target) {
   const [shown, setShown] = useState(false);
   // The set was downloaded: no more documents join it.
   const [completed, setCompleted] = useState(false);
+  // The set was brought back from a claim after a sign-in that left the page (Google, GitHub): finished, and
+  // written for the agent the server says, whatever the switch is on now.
+  const [restored, setRestored] = useState<Target | null>(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   // `signedIn` is the set's own answer, read by runOne: add() is memoised once, so a closure's isSignedIn
@@ -179,7 +195,10 @@ export function useSkillJob(target: Target) {
         ? { id: 'check', label: 'Used the backup writer', detail: 'The AI service was busy. Review this skill before you rely on it.', status: 'warn' }
         : { id: 'check', label: 'Checked the result', detail: 'Structure and frontmatter passed', status: 'done' });
 
-      const result: JobResult = { fileName: file.name, content: file_.content, degraded: !!done?.degraded, meta, sourceChars, seconds };
+      const pv = meta?.preview;
+      const result: JobResult = { fileName: file.name, content: file_.content, degraded: !!done?.degraded, meta, sourceChars, seconds, ...(pv ? { locked: { claimId: pv.claimId } } : {}) };
+      // Kept for this tab, so a sign-up through Google or GitHub (a page load away) can still unlock it
+      if (pv?.claimId) { const was = readPendingClaim(); writePendingClaim({ claimId: pv.claimId, target: target_, at: Date.now(), ...(was?.claimId === pv.claimId && was.action ? { action: was.action } : {}) }); }
       patch(id, (it) => ({ ...it, status: 'done', result }));
     } catch (err: any) {
       if (stale()) return;
@@ -204,6 +223,7 @@ export function useSkillJob(target: Target) {
     session.current = { id: `v3_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, startedAt: Date.now(), target, signedIn: !!isSignedIn, access: readable ? ensureAccess() : Promise.resolve(true) };
     setShown(false);
     setCompleted(false);
+    setRestored(null);
     setItems([]);
     start(files.slice(0, MAX_FILES), seq);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,7 +236,63 @@ export function useSkillJob(target: Target) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const reset = useCallback(() => { runSeq.current++; session.current = null; setItems([]); setShown(false); setCompleted(false); }, []);
+  const reset = useCallback(() => { runSeq.current++; session.current = null; setItems([]); setShown(false); setCompleted(false); setRestored(null); }, []);
+
+  // Unlocks the free try for the account now signed in. The previews on screen get their full skills; with none
+  // on screen (the page reloaded after a Google or GitHub sign-up) the set is brought back from the claim.
+  // Never downloads anything itself: V3App does what they tapped once this says ok.
+  const claim = useCallback(async (): Promise<ClaimOutcome> => {
+    const pending = readPendingClaim();
+    const lockedNow = itemsRef.current.filter((i) => i.status === 'done' && i.result?.locked);
+    const claimId = lockedNow.find((i) => i.result!.locked!.claimId)?.result!.locked!.claimId ?? (lockedNow.length ? null : pending?.claimId ?? null);
+    const outcome = (error: ClaimError, terminal: boolean): ClaimOutcome => {
+      if (terminal) writePendingClaim(null);
+      captureEvent('unlock_claim_failed', { reason: error, live: lockedNow.length > 0 });
+      return { ok: false, error };
+    };
+    if (!claimId) return outcome('gone', true);
+    let token: string | null = null;
+    try { token = await getToken(); } catch { /* below */ }
+    if (!token) return outcome('retry', false);
+    let res: Response;
+    try {
+      res = await fetch(CLAIM_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ claimId, ...(pending?.claimId === claimId && pending.action ? { action: pending.action } : {}) }) });
+    } catch { return outcome('retry', false); }
+    if (res.status === 429) return outcome('limit', true);
+    if (res.status === 404 || res.status === 400) return outcome('gone', true);
+    if (res.status === 409) return outcome('taken', true);
+    if (!res.ok) return outcome('retry', false);
+    const data = await res.json().catch(() => null);
+    const claimed: { enriched: string; target?: string }[] = Array.isArray(data?.items) ? data.items.filter((x: any) => x && typeof x.enriched === 'string') : [];
+    if (!claimed.length) return outcome('gone', true);
+    const full = claimed.map((c) => fixAiYamlFrontmatter(c.enriched));
+
+    if (lockedNow.length) {
+      // The live set: each preview to its own full skill, or nothing changes
+      const idx = matchClaim(lockedNow.map((i) => i.result!.content), full);
+      if (!idx) return outcome('failed', true);
+      const byId = new Map(lockedNow.map((i, n) => [i.id, full[idx[n]]]));
+      setItems((prev) => prev.map((it) => {
+        const c = byId.get(it.id);
+        if (!c || !it.result) return it;
+        const { locked: _gone, ...rest } = it.result;
+        return { ...it, result: { ...rest, content: c } };
+      }));
+    } else {
+      // Back from a sign-in that left the page: the set as the server holds it, finished
+      const t = claimed[0].target;
+      const tgt: Target = t === 'codex' || t === 'agents' ? t : 'claude';
+      runSeq.current++;
+      session.current = null;
+      setCompleted(false);
+      setRestored(tgt);
+      setShown(true);
+      setItems(full.map((content) => ({ id: `f_${Math.random().toString(36).slice(2, 9)}`, fileName: '', status: 'done' as const, steps: [], error: null, message: null, result: { fileName: '', content, degraded: false, sourceChars: 0, seconds: 0 } })));
+    }
+    writePendingClaim(null);
+    captureEvent('unlock_claimed', { skills: claimed.length, live: lockedNow.length > 0 });
+    return { ok: true, action: pending?.claimId === claimId ? pending.action : undefined };
+  }, [getToken]);
 
   // The set was downloaded. The server is told too, so a document sent later under this session (a second
   // tab, a stale page) is refused there as well, not just hidden here. Best effort: the lock on this page
@@ -257,9 +333,10 @@ export function useSkillJob(target: Target) {
   const open = !!startedAt && Date.now() - startedAt < SET_WINDOW_MS;
   const left = Math.max(0, MAX_FILES - items.length);
   // Why more documents can't be added now, if they can't.
-  const closed = completed ? 'Downloaded, so this skill is complete. Start a new skill to build from more documents.'
+  const closed = restored ? 'This skill is finished. Start a new skill to build from more documents.'
+    : completed ? 'Downloaded, so this skill is complete. Start a new skill to build from more documents.'
     : !open ? 'Ten minutes have passed, so this skill is closed. Start a new skill to add more.'
     : left === 0 ? `A skill holds up to ${MAX_FILES} documents.` : null;
 
-  return { items, phase, error: failed?.error ?? null, message: failed?.message ?? null, target: session.current?.target ?? target, run, add, reset, complete, left, canAdd: !closed && phase !== 'idle' && phase !== 'error', closed };
+  return { items, phase, error: failed?.error ?? null, message: failed?.message ?? null, target: session.current?.target ?? restored ?? target, run, add, reset, complete, claim, left, canAdd: !closed && phase !== 'idle' && phase !== 'error', closed };
 }
