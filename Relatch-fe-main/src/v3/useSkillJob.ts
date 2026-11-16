@@ -36,7 +36,16 @@ export type ClaimOutcome = { ok: true; action?: ClaimAction } | { ok: false; err
 export type StepStatus = 'active' | 'done' | 'warn';
 export interface Step { id: string; label: string; detail?: string; status: StepStatus }
 export type JobPhase = 'idle' | 'thinking' | 'done' | 'error';
-export type JobError = 'quota' | 'trial-used' | 'signup-needed' | 'failed';
+export type JobError = 'quota' | 'trial-used' | 'signup-needed' | 'failed' | 'check' | 'busy';
+
+// Why a free try couldn't start (2026-11-17). Before this every refusal read "Your free skill is used", even when
+// Cloudflare's bot check simply didn't finish (an ad blocker, a slow connection, a browser that stalled).
+//   used   this browser already had its free try
+//   check  the Turnstile check didn't finish or didn't pass (relatch api/anon-token.js: 403 TURNSTILE_*)
+//   busy   too many free tries from this network (429 ANON_TOKEN_RATE_LIMITED)
+//   failed Relatch couldn't be reached, or the trial service is down (503, network error)
+type Access = 'ok' | 'used' | 'check' | 'busy' | 'failed';
+const START_FAILED = "Relatch couldn't start your free try. Check your connection and try again.";
 
 export interface JobResult {
   fileName: string;
@@ -107,7 +116,7 @@ export function useSkillJob(target: Target) {
   itemsRef.current = items;
   // `signedIn` is the set's own answer, read by runOne: add() is memoised once, so a closure's isSignedIn
   // would be the first render's (undefined while Clerk loads) and mark the free try spent for an account.
-  const session = useRef<{ id: string; startedAt: number; target: Target; signedIn: boolean; access: Promise<boolean> } | null>(null);
+  const session = useRef<{ id: string; startedAt: number; target: Target; signedIn: boolean; access: Promise<Access> } | null>(null);
 
   const patch = (id: string, fn: (it: JobItem) => JobItem) => setItems((prev) => prev.map((it) => (it.id === id ? fn(it) : it)));
   const upsert = (id: string, s: Step) => patch(id, (it) => ({ ...it, steps: it.steps.some((p) => p.id === s.id) ? it.steps.map((p) => (p.id === s.id ? s : p)) : [...it.steps, s] }));
@@ -116,27 +125,29 @@ export function useSkillJob(target: Target) {
   // anonymous trial token; a visitor whose trial is spent is asked to sign up.
   // Checked once per set: documents added later ride on the same answer, since the server already
   // counts them as part of the same trial.
-  const ensureAccess = useCallback(async (): Promise<boolean> => {
+  const ensureAccess = useCallback(async (): Promise<Access> => {
     setTokenGetter(isSignedIn ? getToken : null);
-    if (isSignedIn) return true;
+    if (isSignedIn) return 'ok';
     try {
-      if (localStorage.getItem(ANON_TRIAL_USED_KEY)) return false;
-      if (localStorage.getItem(ANON_TOKEN_STORAGE_KEY)) return true;
+      if (localStorage.getItem(ANON_TRIAL_USED_KEY)) return 'used';
+      if (localStorage.getItem(ANON_TOKEN_STORAGE_KEY)) return 'ok';
     } catch { /* storage blocked: fall through to minting */ }
     try {
       // Cloudflare Turnstile first (turnstile.ts): '' when this build has no site key, which the backend
       // ignores while its own secret is unset
       const turnstile = await turnstileToken();
       const res = await fetch(ANON_TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ turnstile }) });
-      if (!res.ok) return false;
+      if (res.status === 403) return 'check';
+      if (res.status === 429) return 'busy';
+      if (!res.ok) return 'failed';
       const { token } = await res.json();
-      if (typeof token !== 'string' || !token) return false;
+      if (typeof token !== 'string' || !token) return 'failed';
       try { localStorage.setItem(ANON_TOKEN_STORAGE_KEY, token); } catch { /* proceed without persisting */ }
       // Same funnel event (name and props) V2 sends, so V2 and V3 funnels compare 1:1.
       captureEvent('anon_trial_started', { session_id: readStorage('rl_session_id') });
-      return true;
+      return 'ok';
     } catch {
-      return false;
+      return 'failed';
     }
   }, [isSignedIn, getToken]);
 
@@ -150,7 +161,11 @@ export function useSkillJob(target: Target) {
     const startedAt = performance.now();
     const allowed = await s.access;
     if (stale()) return;
-    if (!allowed) { patch(id, (it) => ({ ...it, status: 'error', error: 'signup-needed' })); return; }
+    if (allowed !== 'ok') {
+      captureEvent('anon_trial_refused', { reason: allowed });
+      patch(id, (it) => ({ ...it, status: 'error', error: allowed === 'used' ? 'signup-needed' : allowed, message: allowed === 'failed' ? START_FAILED : null }));
+      return;
+    }
 
     upsert(id, { id: 'read', label: 'Reading your document', detail: file.name, status: 'active' });
     let sourceChars = 0;
@@ -220,7 +235,7 @@ export function useSkillJob(target: Target) {
     // A set with no file Relatch can read mints no trial token (2026-11-15, found live: a .png spent one of the
     // 5 tokens an IP gets an hour before parseFile said it can't read it). parseFile still shows that message.
     const readable = files.some((f) => validateInputFile(f).ok);
-    session.current = { id: `v3_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, startedAt: Date.now(), target, signedIn: !!isSignedIn, access: readable ? ensureAccess() : Promise.resolve(true) };
+    session.current = { id: `v3_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, startedAt: Date.now(), target, signedIn: !!isSignedIn, access: readable ? ensureAccess() : Promise.resolve('ok' as const) };
     setShown(false);
     setCompleted(false);
     setRestored(null);
