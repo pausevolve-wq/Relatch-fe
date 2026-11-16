@@ -89,6 +89,8 @@ const cantRead = (ext: string) => `Relatch can't read ${ext ? `${ext} files` : '
 function itemNote(i: JobItem) {
   if (i.error === 'quota') return "Today's free skills are used up.";
   if (i.error === 'trial-used' || i.error === 'signup-needed') return 'Create a free account to add more documents.';
+  if (i.error === 'check') return "The quick bot check didn't finish. Try again.";
+  if (i.error === 'busy') return 'Too many free tries from this network.';
   const ext = unreadable(i.message);
   if (ext != null) return cantRead(ext);
   return i.message || "Couldn't be written.";
@@ -497,6 +499,21 @@ export default function V3App() {
                 </>)}
                 {(job.error === 'trial-used' || job.error === 'signup-needed') && (<>
                   <h2 className="mt-8 text-[30px] font-semibold tracking-[-0.03em]">Your free skill is used.</h2>
+                  <p className="mt-3 text-[16px] text-fg-2">Create a free account to keep going: up to 3 skills a day.</p>
+                  <button onClick={() => setAuth('sign-up')} className={cn(pill, 'mt-8 bg-white text-black hover:bg-white/90')}>Create free account</button>
+                </>)}
+                {/* 2026-11-17: the bot check before a free try didn't finish. Not "your free skill is used": nothing was
+                    used, and trying again usually works. */}
+                {job.error === 'check' && (<>
+                  <h2 className="mt-8 text-[30px] font-semibold tracking-[-0.03em]">We couldn't finish a quick check.</h2>
+                  <p className="mt-3 max-w-[46ch] text-[16px] text-fg-2">Relatch checks that you're not a bot before a free try, and it didn't go through. An ad blocker or a slow connection can cause this.</p>
+                  <div className="mt-8 flex flex-wrap justify-center gap-2.5">
+                    {lastFiles.length > 0 && <button onClick={() => start(lastFiles)} className={cn(pill, 'bg-white text-black hover:bg-white/90')}><ArrowClockwiseIcon size={16} weight="bold" />Try again</button>}
+                    <button onClick={() => setAuth('sign-up')} className={cn(pill, 'border border-line-2 text-fg hover:bg-white/[0.06]')}>Create free account</button>
+                  </div>
+                </>)}
+                {job.error === 'busy' && (<>
+                  <h2 className="mt-8 text-[30px] font-semibold tracking-[-0.03em]">Too many free tries from this network.</h2>
                   <p className="mt-3 text-[16px] text-fg-2">Create a free account to keep going: up to 3 skills a day.</p>
                   <button onClick={() => setAuth('sign-up')} className={cn(pill, 'mt-8 bg-white text-black hover:bg-white/90')}>Create free account</button>
                 </>)}
