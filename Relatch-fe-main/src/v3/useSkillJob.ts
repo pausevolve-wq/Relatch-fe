@@ -13,6 +13,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useAuth } from '@clerk/react';
 import { captureEvent } from '../analytics';
 import { TARGET_NAME } from './logos';
+import { turnstileToken } from './turnstile';
 import type { Target } from './skillExport';
 import { parseFile, validateInputFile, setTokenGetter, _getToken, ANON_TOKEN_URL, ANON_TOKEN_STORAGE_KEY, ANON_TRIAL_USED_KEY, ENRICH_PROXY_URL, readStorage, type EngineStage, type EnrichMeta } from '@/engine/core';
 
@@ -107,7 +108,10 @@ export function useSkillJob(target: Target) {
       if (localStorage.getItem(ANON_TOKEN_STORAGE_KEY)) return true;
     } catch { /* storage blocked: fall through to minting */ }
     try {
-      const res = await fetch(ANON_TOKEN_URL, { method: 'POST' });
+      // Cloudflare Turnstile first (turnstile.ts): '' when this build has no site key, which the backend
+      // ignores while its own secret is unset
+      const turnstile = await turnstileToken();
+      const res = await fetch(ANON_TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ turnstile }) });
       if (!res.ok) return false;
       const { token } = await res.json();
       if (typeof token !== 'string' || !token) return false;
