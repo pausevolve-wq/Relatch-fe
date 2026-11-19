@@ -2,9 +2,22 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
+import { copyFileSync } from 'node:fs'
+
+// 2026-11-19 (app 404s): vercel.json rewrites only the app's own addresses (the list in src/v3/ErrorScreens.tsx,
+// APP_PATHS) to v3.html. Any other path gets Vercel's 404 page, dist/404.html, served WITH status 404: a copy of
+// v3.html, so people still see the app's designed NotFound screen while bots, old links and deleted bundles get
+// a real 404 instead of the app's HTML with 200. A new app address must be added to BOTH lists, or it 404s.
+const notFoundPage = {
+  name: 'relatch-404-page',
+  apply: 'build' as const,
+  closeBundle() {
+    copyFileSync(fileURLToPath(new URL('./dist/v3.html', import.meta.url)), fileURLToPath(new URL('./dist/404.html', import.meta.url)))
+  },
+}
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), notFoundPage],
 
   // 2026-11-15 (V3 port): the V3 code imports shared modules as '@/...' (same mapping as tsconfig.json).
   resolve: {
