@@ -19,6 +19,7 @@ import { Modal } from './Modal';
 import { ContactPage } from './ContactPage';
 import { LegalPage } from './LegalPage';
 import { NotFound, leaveStrayPath, strayPath } from './ErrorScreens';
+import { captureEvent, registerProps } from '../analytics';
 import { FeedbackNote, NOTE_READY, noteSeen } from './FeedbackNote';
 
 // SANDBOX ONLY (compiled out of production): the sandbox bar's "Crash the app" leaves this flag and reloads;
@@ -318,6 +319,26 @@ export default function V3App() {
     const now: Place | null = job.phase === 'thinking' ? { view: 'building' } : page ? { view: page } : atHome && hasWork ? { view: 'home' } : onScreen ? { view: 'skill', id: onScreen.id } : null;
     try { if (now) sessionStorage.setItem(PLACE, JSON.stringify(now)); else sessionStorage.removeItem(PLACE); } catch { /* storage blocked: a reload starts fresh */ }
   }, [job.phase, page, atHome, hasWork, onScreen?.id]);
+
+  // 2026-11-19 (PostHog rebuild): which screen is up. The whole app lives at one address, so without this every
+  // click, heatmap point and replay moment is just "/". app_screen and app_overlay ride on every later event
+  // (autocaptured clicks and heatmap data included), and screen_viewed marks each change.
+  const screen = stray ? 'not_found' : showPage ? `page_${page}` : job.phase === 'thinking' && !composing && !saved ? 'building'
+    : previewing ? (saved ? 'saved_skill' : 'skill_preview') : composing ? (atHome ? 'home' : 'new_skill') : job.phase === 'error' ? 'job_error' : 'workspace';
+  const overlay = auth ? `auth_${auth}` : unlock ? 'unlock_sheet' : install ? 'install_guide' : account ? 'account' : null;
+  useEffect(() => {
+    registerProps({ app_screen: screen, app_overlay: overlay, signed_in: !!isSignedIn });
+  }, [screen, overlay, isSignedIn]);
+  useEffect(() => { captureEvent('screen_viewed', { screen }); }, [screen]);
+  // The agent switch (Claude / Codex / Agents). selected_target rides on every event; target_selected marks a
+  // deliberate change, not the value restored on load.
+  const firstTarget = useRef(true);
+  useEffect(() => {
+    registerProps({ selected_target: target });
+    if (firstTarget.current) { firstTarget.current = false; return; }
+    captureEvent('target_selected', { target, screen });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the screen at the moment of the change, not a trigger
+  }, [target]);
 
   const start = (files: File[]) => {
     if (!files.length) return;

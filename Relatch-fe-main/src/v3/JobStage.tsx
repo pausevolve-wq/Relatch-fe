@@ -30,6 +30,7 @@ import { downloadPlan, downloadSkill, claudeFile, downloadedHeader, type SkillPa
 import type { Unlock } from './auth/AuthSheet';
 import { estimateTokens } from '@/engine/core';
 import { cn } from '@/lib/utils';
+import { captureEvent } from '../analytics';
 
 const pill = 'inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14.5px] font-medium transition-[background-color,color,transform,opacity] duration-200 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:pointer-events-none';
 const ring = 'focus-visible:outline-2 focus-visible:outline-white/60';
@@ -190,6 +191,8 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
     const r = await downloadSkill(target, name, skill);
     setNote(r.note);
     if (!r.saved) return;
+    // 2026-11-19 (PostHog rebuild): the skill left Relatch, the clearest "this was worth it" signal there is
+    captureEvent('skill_exported', { action: 'download', target, files: skill.length, sections: skill.reduce((n, p) => n + countSections(p.content), 0) });
     setSaved(true);
     // Downloading completes the skill: no more documents join it after this.
     adding.complete();
@@ -200,7 +203,10 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
   const copy = async () => {
     if (!signedIn) return onSignUp(ask('copy'));
     if (locked) return;
-    try { await navigator.clipboard.writeText(claudeFile(skill[0].content, name)); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* clipboard blocked */ }
+    try {
+      await navigator.clipboard.writeText(claudeFile(skill[0].content, name)); setCopied(true); window.setTimeout(() => setCopied(false), 1600);
+      captureEvent('skill_exported', { action: 'copy', target, files: skill.length, sections: countSections(skill[0].content) });
+    } catch { /* clipboard blocked */ }
   };
 
   // Back from the unlock sheet, signed in: do what they tapped. (A copy may be refused by the browser this long
@@ -241,7 +247,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
             <button key={p.key} role="menuitemradio" aria-checked={p.key === part.key} onClick={() => { setSel(p.key); setMenu(false); scroller.current?.scrollTo({ top: 0 }); }} className={cn('flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.06]', p.key === part.key && 'bg-white/[0.06]', ring)}>
               <FileTextIcon size={15} className="shrink-0 text-fg-2" />
               <span className="min-w-0 flex-1">
-                <span className={cn('block truncate text-[13.5px]', p.status === 'done' ? 'text-fg' : 'text-fg-2')}>{p.name}</span>
+                <span data-ph-mask className={cn('block truncate text-[13.5px]', p.status === 'done' ? 'text-fg' : 'text-fg-2')}>{p.name}</span>
                 {p.status !== 'done' && <span className={cn('block truncate text-[12px]', p.status === 'error' ? 'text-amber-200/90' : 'text-fg-3')}>{p.status === 'thinking' ? 'Writing…' : p.note || "Couldn't be written"}</span>}
               </span>
               {p.status === 'thinking' ? <CircleNotchIcon size={14} className="shrink-0 animate-spin text-fg-3" /> : p.key === part.key ? <CheckIcon size={14} weight="bold" className="shrink-0 text-fg" /> : null}
@@ -316,14 +322,14 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
             </div>
           ) : part.status === 'error' ? (
             <div data-in className="px-5 py-6 max-[360px]:px-4 sm:px-8">
-              <p className="flex items-start gap-2 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] px-4 py-3 text-[14px] text-amber-100">
+              <p data-ph-mask className="flex items-start gap-2 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] px-4 py-3 text-[14px] text-amber-100">
                 <WarningCircleIcon size={18} className="mt-px shrink-0" />{part.fileName ? `${part.fileName}: ` : ''}{part.note || "This document couldn't be written into a skill."}
               </p>
             </div>
           ) : (<>
             <div data-in className="space-y-3 px-5 pt-5 max-[360px]:px-4 sm:px-8">
               {/* A skill reopened from the history has no source file name and no reasoning steps: neither is kept. */}
-              <p className="text-[14px] text-fg-2">{countSections(part.content)} sections · about {estimateTokens(part.content).toLocaleString()} tokens{part.fileName && ` · from ${part.fileName}`}</p>
+              <p data-ph-mask className="text-[14px] text-fg-2">{countSections(part.content)} sections · about {estimateTokens(part.content).toLocaleString()} tokens{part.fileName && ` · from ${part.fileName}`}</p>
               {part.steps && part.steps.length > 0 && <Thinking key={part.key} steps={part.steps} running={false} seconds={part.seconds} />}
               {part.degraded && (
                 <p className="flex items-start gap-2 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] px-4 py-3 text-[14px] text-amber-100">
@@ -333,7 +339,8 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
             </div>
 
             {/* Folded: 460px here, and taller on a tall screen (fitFold above). */}
-            <div ref={fold} data-in className={cn('relative px-5 py-7 max-[360px]:px-4 sm:px-10', !expanded && 'max-h-[460px] overflow-hidden')}>
+            {/* data-ph-mask: the skill is text from their document, so session replays show it masked (analytics.ts) */}
+            <div ref={fold} data-in data-ph-mask className={cn('relative px-5 py-7 max-[360px]:px-4 sm:px-10', !expanded && 'max-h-[460px] overflow-hidden')}>
               {header && <FileHeader yaml={header} agent={agent} />}
               <SkillMarkdown md={shownMd} />
               {!expanded && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-ink-1 to-transparent" />}

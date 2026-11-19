@@ -41,10 +41,10 @@ function Privacy() {
 
       <H2>2. What We Collect</H2>
       <H3>2.1 Analytics and Behavioural Data</H3>
-      <P>Relatch uses the following third-party analytics tools to understand how users interact with the product. This data is aggregated and does not personally identify you.</P>
+      <P>Relatch uses the following third-party analytics tools to understand how people use the product. If you are not signed in, this data is not linked to your name or email address. If you are signed in, PostHog links it to your account, as described below.</P>
       <Ul>
         <li><span className="text-fg">Google Analytics</span> — collects page views, session duration, device type, and general geographic region.</li>
-        <li><span className="text-fg">PostHog</span> — records anonymised heatmaps, session replays, and product analytics events to help us identify usability issues and improve the product. PostHog may capture mouse movements, clicks, and page interactions but does not capture passwords or payment information.</li>
+        <li><span className="text-fg">PostHog</span> — records product events (for example: which AI agent a skill is made for, whether a skill was generated, downloaded, copied or deleted, the steps of signing up or logging in, and feedback ratings), click and scroll heatmaps, and session replays, to help us find usability problems and improve the product. Replays show the layout of the page and where you click; the text you type into fields and the text of your skills and document names are masked, and passwords and payment information are never captured. PostHog also records your approximate location (country and city, derived from your IP address), browser, device and the website that referred you. If you are signed in, these events are linked to your account ID, name and email address. Your documents are not sent to PostHog.</li>
         <li><span className="text-fg">Google Tag Manager</span> — manages and deploys the analytics tags listed above. It does not independently collect data.</li>
       </Ul>
       <P>You can opt out of Google Analytics by installing the <Ext href="https://tools.google.com/dlpage/gaoptout">Google Analytics Opt-out Browser Add-on</Ext>. You can opt out of PostHog by disabling cookies in your browser settings.</P>

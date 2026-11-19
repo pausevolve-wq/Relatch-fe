@@ -22,7 +22,7 @@ import { CodeBoxes, CodeNote, EMAIL, noAutofill, normalEmail, useEmailCode, type
 import { useAuthApi } from './authApi';
 import { cn } from '@/lib/utils';
 import { readStorage } from '@/engine/core';
-import { captureEvent } from '../../analytics';
+import { captureEvent, noteAuthIntent } from '../../analytics';
 
 export type Provider = 'google' | 'github';
 /** The unlock sheet (2026-11-15, Manas's hybrid plan): a signed-out visitor's free skill is shown as a preview;
@@ -172,6 +172,17 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
   useEffect(() => { if (mode === 'login') signInEvent('clerk_signin_opened'); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (unlock) signInEvent('unlock_sheet_opened', { action: unlock.action, agent: unlock.agent }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const signup = mode === 'signup';
+  // 2026-11-19 (PostHog rebuild): what this sheet is starting, noted before a sign-in can leave the page (Google,
+  // GitHub), so useIdentify can count it when the account comes back signed in. Sign-ups get their own start event.
+  // Once per sheet and method: a resent code or a second tap is not a second start.
+  const signupStarted = useRef(new Set<string>());
+  const intend = (method: string) => {
+    noteAuthIntent({ mode: signup ? 'signup' : 'login', method, via: unlock ? 'unlock' : 'direct', action: unlock?.action });
+    if (signup && !signupStarted.current.has(method)) {
+      signupStarted.current.add(method);
+      signInEvent('signup_started', { method, via: unlock ? 'unlock' : 'direct', unlock_action: unlock?.action });
+    }
+  };
   const usesCode = mode !== 'login';
   const [done, setDone] = useState(false);
   const [working, setWorking] = useState<null | 'submit' | Provider>(null);
@@ -359,6 +370,7 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
   }
 
   async function sendEmailCode() {
+    intend('email_code');
     const r = await emailCode.send(email, signup ? 'signup' : 'login');
     if (r.exists) return toLogin();
     if (r.error) {
@@ -392,6 +404,7 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
     setNote('');
     setWorking(provider);
     if (!signup) signInEvent('clerk_signin_attempted', { method: provider, user_agent: navigator.userAgent, referrer: document.referrer });
+    intend(provider);
     const result = await api.oauth(provider, { legalAccepted: signup && agreed }).catch(() => ({ error: "We couldn't reach the sign-in. Try again." }));
     if (result?.error) {
       setWorking(null);
@@ -443,6 +456,7 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
     setError('');
     setWorking('submit');
     signInEvent('clerk_signin_attempted', { method: 'password', user_agent: navigator.userAgent, referrer: document.referrer });
+    intend('password');
     const result: Outcome = await api.logIn({ email, password: values.password }).catch(() => ({ error: 'Something went wrong. Try again.' }));
     if (result?.error) {
       setWorking(null);
