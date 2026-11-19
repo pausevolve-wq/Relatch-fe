@@ -23,7 +23,7 @@ function StepRow({ step }: { step: Step }) {
         {step.status === 'active'
           ? <AnimatedShinyText className="mx-0 max-w-none text-[15px] font-medium text-fg-2/80 dark:text-fg-2/80" shimmerWidth={140}>{step.label}</AnimatedShinyText>
           : <p className="text-[15px] font-medium text-fg">{step.label}</p>}
-        {step.detail && <p className="mt-0.5 text-[13.5px] text-fg-2">{step.detail}</p>}
+        {step.detail && <p data-ph-mask className="mt-0.5 text-[13.5px] text-fg-2">{step.detail}</p>}
       </div>
     </li>
   );
@@ -109,7 +109,7 @@ export function Thinking({ steps, running, seconds, className, files, footer }: 
           {files.map((f, i) => (
             <li key={i} className={cn('inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px]', f.status === 'error' ? 'border-amber-300/25 text-amber-100' : 'border-line-2 text-fg-2')}>
               {f.status === 'thinking' ? <span className="size-1.5 animate-pulse rounded-full bg-fg" /> : f.status === 'done' ? <CheckIcon size={12} weight="bold" /> : <WarningCircleIcon size={13} />}
-              <span className="truncate">{f.name}</span>
+              <span data-ph-mask className="truncate">{f.name}</span>
             </li>
           ))}
         </ul>

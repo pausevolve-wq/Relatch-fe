@@ -18,6 +18,7 @@ import type { Target } from './skillExport';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/react';
 import { ENRICH_PROXY_URL } from '@/engine/core';
+import { captureEvent } from '../analytics';
 
 export interface SavedSkill {
   id: string;
@@ -86,6 +87,9 @@ export function useSkillHistory() {
   // Versions already sent (or being sent) in this visit, by id, so a failed save waits for the next
   // app open instead of being retried on every change.
   const sent = useRef(new Map<string, string>());
+  // 2026-11-19 (PostHog rebuild): what is on the list now, for the skill_deleted event (who it was for, how old)
+  const skillsRef = useRef(skills);
+  skillsRef.current = skills;
 
   // Every change goes to this account's local copy, and is dropped if the account changed meanwhile.
   const commit = useCallback((forUid: string, change: (prev: SavedSkill[]) => SavedSkill[]) => {
@@ -184,6 +188,8 @@ export function useSkillHistory() {
   const remove = useCallback((id: string) => {
     const forUid = uidRef.current;
     if (!forUid) return;
+    const gone = skillsRef.current.find((p) => p.id === id);
+    captureEvent('skill_deleted', { scope: 'one', count: 1, target: gone?.target, age_hours: gone ? Math.round((Date.now() - gone.createdAt) / 3_600_000) : undefined, left: Math.max(0, skillsRef.current.length - 1) });
     commit(forUid, (prev) => prev.filter((p) => p.id !== id));
     writeList(pendingKeyFor(forUid), [...loadPending(forUid).filter((p) => p !== id), id]);
     void flushDeletes(forUid);
@@ -192,6 +198,8 @@ export function useSkillHistory() {
   const clear = useCallback(() => {
     const forUid = uidRef.current;
     if (!forUid) return;
+    const all = skillsRef.current;
+    captureEvent('skill_deleted', { scope: 'all', count: all.length, claude: all.filter((s) => s.target === 'claude').length, codex: all.filter((s) => s.target === 'codex').length, agents: all.filter((s) => s.target === 'agents').length, left: 0 });
     commit(forUid, () => []);
     writeList(pendingKeyFor(forUid), ['*']);
     void flushDeletes(forUid);

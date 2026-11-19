@@ -20,6 +20,7 @@ import { downloadAll } from './skillExport';
 import type { SavedSkill } from './useSkillHistory';
 import { ANON_TRIAL_USED_KEY } from '@/engine/core';
 import { cn } from '@/lib/utils';
+import { captureEvent } from '../analytics';
 
 import type { Target } from './skillExport';
 type Filter = 'all' | Target;
@@ -143,7 +144,10 @@ function HistoryPanel({ skills, paused, onPaused, onBack }: { skills: SavedSkill
   }, []);
   const exportAll = async () => {
     setBusy(true);
-    try { await downloadAll(skills.map((s) => ({ target: s.target, name: s.name, parts: (s.files ?? [{ name: s.name, content: s.content }]).map((f) => ({ name: f.name, content: f.content })) }))); } finally { setBusy(false); }
+    try {
+      await downloadAll(skills.map((s) => ({ target: s.target, name: s.name, parts: (s.files ?? [{ name: s.name, content: s.content }]).map((f) => ({ name: f.name, content: f.content })) })));
+      captureEvent('skill_exported', { action: 'download_all', skills: skills.length, claude: skills.filter((s) => s.target === 'claude').length, codex: skills.filter((s) => s.target === 'codex').length, agents: skills.filter((s) => s.target === 'agents').length });
+    } finally { setBusy(false); }
   };
   return (
     <div ref={box} role="region" aria-labelledby="history-h" className="absolute inset-0 z-20 flex flex-col bg-ink" style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
@@ -410,7 +414,7 @@ export function Sidebar({ skills, activeId, building, buildingActive, open, coll
             <div key={s.id} className={row(s.id === activeId)}>
               <button onClick={() => onOpen(s.id)} aria-current={s.id === activeId ? 'true' : undefined} className={cn('flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2.5 pr-1 text-left text-[13.5px]', ring)}>
                 <TargetLogo target={s.target} size={14} />
-                <span className="truncate">{s.name}</span>
+                <span data-ph-mask className="truncate">{s.name}</span>
               </button>
               {/* The age gives way to the remove button on hover or keyboard focus. */}
               <span className="relative mr-1.5 grid h-6 w-7 shrink-0 place-items-center">

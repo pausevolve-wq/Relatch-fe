@@ -172,12 +172,16 @@ export function useSkillJob(target: Target) {
     upsert(id, { id: 'read', label: 'Reading your document', detail: file.name, status: 'active' });
     let sourceChars = 0;
     let target_ = s.target;
+    // 2026-11-19 (PostHog rebuild): what the engine decided, for skill_generated. Never the file's name or text.
+    const facts: { template?: string; category?: string; size_class?: string; file_type?: string } = {};
     const onStage = (st: EngineStage) => {
       if (stale()) return;
       if (st.stage === 'extracted') {
         sourceChars = st.chars;
+        facts.file_type = st.fileType;
         upsert(id, { id: 'read', label: 'Read your document', detail: `${file.name} · ${st.chars.toLocaleString()} characters`, status: 'done' });
       } else if (st.stage === 'profiled') {
+        facts.template = st.template; facts.category = st.category; facts.size_class = st.sizeClass;
         upsert(id, { id: 'size', label: 'Sized it up', detail: SIZE_WORDS[st.sizeClass] ?? 'Document sized', status: 'done' });
       } else if (st.stage === 'sent') {
         target_ = st.target;
@@ -192,6 +196,14 @@ export function useSkillJob(target: Target) {
       captureEvent('file_uploaded', { file_type: file_.type, file_size_mb: +(file_.size / (1024 * 1024)).toFixed(2), session_id: readStorage('rl_session_id') });
       // The server has spent the free trial whether or not anyone is still watching, so record that first.
       if (!s.signedIn) { try { localStorage.setItem(ANON_TRIAL_USED_KEY, '1'); } catch { /* ignore */ } }
+      // 2026-11-19 (PostHog rebuild): one per document written, also when nobody is still watching (the skill
+      // exists either way). preview_only: a signed-out free try, whose full skill waits for an unlock.
+      const m = done?.meta;
+      captureEvent('skill_generated', {
+        target: target_, set_id: s.id, signed_in: s.signedIn, preview_only: !!m?.preview, seconds: Math.round(seconds),
+        degraded: !!done?.degraded, sections: countSections(file_.content), locked_sections: m?.preview?.lockedSections,
+        doc_type: m?.plan?.doc_type, source_chars: sourceChars, file_size_mb: +(file.size / (1024 * 1024)).toFixed(2), model: m?.model, ...facts,
+      });
       if (stale()) return;
       const meta = done?.meta;
       const plan = meta?.plan ?? {};
@@ -218,6 +230,12 @@ export function useSkillJob(target: Target) {
       if (pv?.claimId) { const was = readPendingClaim(); writePendingClaim({ claimId: pv.claimId, target: target_, at: Date.now(), ...(was?.claimId === pv.claimId && was.action ? { action: was.action } : {}) }); }
       patch(id, (it) => ({ ...it, status: 'done', result }));
     } catch (err: any) {
+      // 2026-11-19 (PostHog rebuild): counted before the stale check, like skill_generated
+      captureEvent('skill_generation_failed', {
+        target: target_, set_id: s.id, signed_in: s.signedIn, seconds: Math.round((performance.now() - startedAt) / 1000),
+        error: err?.isQuotaError ? 'quota' : err?.isAnonTokenInvalid ? 'trial-used' : typeof err?.message === 'string' ? 'unreadable_or_failed' : 'failed',
+        ...facts,
+      });
       if (stale()) return;
       // parseFile rejects unreadable or unsupported files with a plain-language reason; show it.
       const plain = !err?.isQuotaError && !err?.isAnonTokenInvalid && typeof err?.message === 'string';
@@ -243,12 +261,15 @@ export function useSkillJob(target: Target) {
     setRestored(null);
     setItems([]);
     start(files.slice(0, MAX_FILES), seq);
+    captureEvent('skill_generation_started', { target, set_id: session.current.id, signed_in: !!isSignedIn, documents: Math.min(files.length, MAX_FILES), dropped: Math.max(0, files.length - MAX_FILES) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ensureAccess, target, isSignedIn]);
 
   // More documents for the set on screen, written for the same agent under the same session.
   const add = useCallback((files: File[]) => {
     if (!session.current) return;
+    const n = Math.min(files.length, Math.max(0, MAX_FILES - itemsRef.current.length));
+    if (n) captureEvent('skill_documents_added', { target: session.current.target, set_id: session.current.id, documents: n });
     start(files.slice(0, Math.max(0, MAX_FILES - itemsRef.current.length)), runSeq.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -311,7 +332,7 @@ export function useSkillJob(target: Target) {
       setItems(full.map((content) => ({ id: `f_${Math.random().toString(36).slice(2, 9)}`, fileName: '', status: 'done' as const, steps: [], error: null, message: null, result: { fileName: '', content, degraded: false, sourceChars: 0, seconds: 0 } })));
     }
     writePendingClaim(null);
-    captureEvent('unlock_claimed', { skills: claimed.length, live: lockedNow.length > 0 });
+    captureEvent('unlock_claimed', { skills: claimed.length, live: lockedNow.length > 0, target: claimed[0].target ?? 'claude', action: pending?.claimId === claimId ? pending.action : undefined });
     return { ok: true, action: pending?.claimId === claimId ? pending.action : undefined };
   }, [getToken]);
 

@@ -91,9 +91,16 @@ gtag('config', 'G-3S6Z146BBL');
   autocapture: true,
   capture_pageview: true,
   capture_pageleave: true,
+  // 2026-11-19 (PostHog rebuild): click and scroll heatmaps, and clicks that did nothing (dead clicks = the
+  // cold-spot / confusion signal). Heatmaps also need "Heatmaps" switched on in the PostHog project settings.
+  enable_heatmaps: true,
+  capture_dead_clicks: true,
+  // 2026-11-19: replays used to record every input except passwords (emails, the feedback note, skill names)
+  // and every skill on screen, which is text taken from people's documents. Inputs are masked now, and so is
+  // any element marked data-ph-mask (the skill preview, the history names). Hotspots don't need the words.
   session_recording: {
-    maskAllInputs: false,
-    maskInputOptions: { password: true },
+    maskAllInputs: true,
+    maskTextSelector: '[data-ph-mask]',
   },
 });
 
@@ -104,18 +111,56 @@ gtag('config', 'G-3S6Z146BBL');
 declare global {
   interface Window {
     posthog?: {
-      identify: (distinctId: string, properties?: Record<string, unknown>) => void;
+      identify: (distinctId: string, properties?: Record<string, unknown>, setOnce?: Record<string, unknown>) => void;
       capture: (event: string, properties?: Record<string, unknown>) => void;
+      register: (properties: Record<string, unknown>) => void;
+      reset: () => void;
     };
   }
 }
 
-export function identifyUser(distinctId: string, properties?: Record<string, unknown>): void {
+/** properties are $set on the person (latest wins), setOnce only the first time (where they came from) */
+export function identifyUser(distinctId: string, properties?: Record<string, unknown>, setOnce?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !window.posthog) return;
-  window.posthog.identify(distinctId, properties);
+  window.posthog.identify(distinctId, properties, setOnce);
 }
 
 export function captureEvent(name: string, properties?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !window.posthog) return;
   window.posthog.capture(name, properties);
+}
+
+/** Super properties: sent with every later event, autocaptured clicks and heatmap data included */
+export function registerProps(properties: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.posthog) return;
+  window.posthog.register(properties);
+}
+
+/** After a sign-out: the next person on this browser starts as a new anonymous visitor, not as the last account */
+export function resetAnalytics(): void {
+  if (typeof window === 'undefined' || !window.posthog) return;
+  window.posthog.reset();
+}
+
+// ─── Sign-in intent, across the Google / GitHub redirect ─────────────────────
+// 2026-11-19: a Google or GitHub sign-in leaves the page and comes back through /sso-callback with a full page
+// load, so the app could not tell that return from an ordinary visit with a session already there, and every
+// OAuth sign-in and sign-up went unrecorded. The sheet notes what was started (sessionStorage: this tab only);
+// useIdentify reads it once the account is signed in. Half an hour covers a slow email code.
+const AUTH_INTENT = 'rl_auth_intent';
+const AUTH_INTENT_MS = 30 * 60 * 1000;
+export interface AuthIntent { mode: 'signup' | 'login'; method: string; via: 'unlock' | 'direct'; action?: string; at: number }
+
+export function noteAuthIntent(intent: Omit<AuthIntent, 'at'>): void {
+  try { sessionStorage.setItem(AUTH_INTENT, JSON.stringify({ ...intent, at: Date.now() })); } catch { /* storage blocked: the sign-in still counts if it happens on this page */ }
+}
+
+/** The intent noted in this tab, if fresh; it is removed, so one sign-in is counted once */
+export function takeAuthIntent(): AuthIntent | null {
+  try {
+    const raw = sessionStorage.getItem(AUTH_INTENT);
+    sessionStorage.removeItem(AUTH_INTENT);
+    const i = raw ? JSON.parse(raw) : null;
+    return i && typeof i.at === 'number' && Date.now() - i.at < AUTH_INTENT_MS ? i : null;
+  } catch { return null; }
 }
