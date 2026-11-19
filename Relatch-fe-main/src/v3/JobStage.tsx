@@ -352,7 +352,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
           ) : (
             <>
               <p className="text-[20px] font-semibold tracking-[-0.03em] text-fg">Your free skill is ready.</p>
-              <p className="max-w-[44ch] text-[15px] text-fg-2">Create a free account to download it, copy it and read every section. Then make up to 3 skills a day.</p>
+              <p className="max-w-[44ch] text-[15px] text-fg-2">Create a free account to download it, copy it and read every section. Free accounts get 3 skills a day, this one included.</p>
               <div className="mt-1 flex flex-wrap justify-center gap-2.5">
                 <button onClick={() => onSignUp(ask('download'))} className={cn(pill, 'bg-white text-black hover:bg-white/90')}>Unlock my skill<ArrowRightIcon size={16} weight="bold" /></button>
                 <button onClick={onAnother} className={cn(pill, 'text-fg-2 hover:text-fg')}>Start over</button>

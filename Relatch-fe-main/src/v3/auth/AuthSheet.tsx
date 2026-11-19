@@ -541,7 +541,9 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
   const title = unlock ? (done ? "It's yours" : 'Your skill is ready') : signup ? 'Create your free account' : mode === 'code' ? 'Log in with a code' : 'Welcome back';
   const subtitle = unlock
     ? done ? { download: 'Downloading it now.', copy: 'Copying it for you.', read: 'Opening the whole skill.' }[unlock.action]
-    : (signup ? 'Create a free account to download it and keep it. You also get 3 new skills a day.' : mode === 'code' ? "We'll email you a 6-digit code, then it's yours." : 'Log in to download it and keep it.')
+    // 2026-11-19 (Manas picked it): an unlock is now one of the day's 3 (relatch#50), so the old "You also get 3 new
+    // skills a day" read as 3 on top. Sign-up only: a new account is at 0 of 3, so "2 more" is always true there.
+    : (signup ? 'Unlock this skill free, plus 2 more today. No card needed.' : mode === 'code' ? "We'll email you a 6-digit code, then it's yours." : 'Log in to download it and keep it.')
     : signup ? 'Save every skill you make, on any device.' : mode === 'code' ? "We'll email you a 6-digit code." : 'Log in to pick up where you left off.';
   const label = working === 'google' ? 'Opening Google...' : working === 'github' ? 'Opening GitHub...'
     : done ? (unlock ? 'Unlocked' : "You're in")
