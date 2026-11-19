@@ -23,6 +23,7 @@ import { useAuthApi } from './authApi';
 import { cn } from '@/lib/utils';
 import { readStorage } from '@/engine/core';
 import { captureEvent } from '../../analytics';
+import { appPath } from '../base';
 
 export type Provider = 'google' | 'github';
 /** The unlock sheet (2026-11-15, Manas's hybrid plan): a signed-out visitor's free skill is shown as a preview;
@@ -58,8 +59,10 @@ const PASSWORD_MIN = 8;
 const LABELS: Record<Field, string> = { email: 'Email', password: 'Password' };
 const HINTS: Record<Field, string> = { email: 'Your email', password: 'Your password' };
 /** The live public pages (V3's in-app copies have no URL of their own); a new tab keeps the half-filled sheet */
-const TERMS_URL = 'https://relatch.online/terms.html';
-const PRIVACY_URL = 'https://relatch.online/privacy.html';
+// 2026-11-20: the app's own legal pages (they have addresses since the 11-15 flip). app.relatch.online is the
+// one address Relatch shares, so the consent a sign-up agrees to is read there, not on relatch.online.
+const TERMS_URL = appPath('terms-of-service');
+const PRIVACY_URL = appPath('privacy-policy');
 const AGREE_FIRST = 'Tick the box to agree to the Terms and Privacy Policy first.';
 /** Wait this long after typing stops on a wrongly shaped email before the mark doubts it */
 const DOUBT_AFTER = 1200;
