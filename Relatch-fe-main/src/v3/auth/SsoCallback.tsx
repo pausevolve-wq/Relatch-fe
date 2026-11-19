@@ -8,11 +8,13 @@
 import { useState } from 'react';
 import { HandleSSOCallback, useSignUp } from '@clerk/react';
 import { appUrls } from './clerkAuth';
+import { appPath } from '../base';
 import { readError } from './clerkAuthCore';
 import { RelatchMark } from '../RelatchMark';
 
-const TERMS_URL = 'https://relatch.online/terms.html';
-const PRIVACY_URL = 'https://relatch.online/privacy.html';
+// 2026-11-20: the app's own legal pages, as on the sign-up sheet (AuthSheet.tsx)
+const TERMS_URL = appPath('terms-of-service');
+const PRIVACY_URL = appPath('privacy-policy');
 
 function go(url: string) {
   window.location.replace(url);
