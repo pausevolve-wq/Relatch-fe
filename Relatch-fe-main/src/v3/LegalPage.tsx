@@ -10,7 +10,8 @@
 //   browser.
 // The landing's links to its other pages become the in-app pages; its "Legal notices" page has no
 // in-app copy, so it is not linked.
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { gsap } from 'gsap';
 import { ArrowLeftIcon, ArrowRightIcon } from '@phosphor-icons/react';
 import { CONTACT_EMAIL } from './ContactPage';
@@ -198,7 +199,9 @@ function Terms() {
   );
 }
 
-export function LegalPage({ doc, onBack, backLabel, onOpen }: { doc: LegalDoc; onBack: () => void; backLabel: string; onOpen: (p: LegalDoc | 'contact') => void }) {
+// still (2026-11-20): no scroll-driven reveal or parallax. Inside LegalOverlay the page scrolls its own box, not the
+// window, so the window-scroll motion would never run and blocks could stay hidden; there everything is simply shown.
+export function LegalPage({ doc, onBack, backLabel, onOpen, still = false }: { doc: LegalDoc; onBack: () => void; backLabel: string; onOpen: (p: LegalDoc | 'contact') => void; still?: boolean }) {
   const body = useRef<HTMLDivElement>(null);
   const other: LegalDoc = doc === 'privacy' ? 'terms' : 'privacy';
 
@@ -211,7 +214,7 @@ export function LegalPage({ doc, onBack, backLabel, onOpen }: { doc: LegalDoc; o
   // owns `transform` and the parallax owns the separate CSS `translate` property, so they never fight.
   useLayoutEffect(() => {
     const root = body.current;
-    if (!root || calm()) return;
+    if (!root || calm() || still) return;
     const hero = root.querySelector<HTMLElement>('[data-hero]');
     const blocks = [...root.querySelectorAll<HTMLElement>('[data-hero] > *, article > *, [data-also]')];
     const heads = [...root.querySelectorAll<HTMLElement>('article > h3')];
@@ -300,5 +303,44 @@ export function LegalPage({ doc, onBack, backLabel, onOpen }: { doc: LegalDoc; o
         </div>
       </main>
     </div>
+  );
+}
+
+// 2026-11-20 (found in Manas's phone test, PostHog session 20:10): the sign-up consent linked to the app's own
+// /terms-of-service in a new tab. That tab is a second copy of the app, and its "Back to home" opened an empty
+// home there, so the free-try preview looked lost (it was still in the first tab) and a sign-in from the new tab
+// had no skill to unlock (the claim lives in the first tab's sessionStorage). Now the Terms and Privacy Policy open
+// over the sheet, in the same tab: closing them returns to the sheet with the skill and the claim untouched.
+// data-legal-overlay: the sheet under it leaves Escape and Tab to this while it is open.
+export function LegalOverlay({ doc, onClose }: { doc: LegalDoc; onClose: () => void }) {
+  const [shown, setShown] = useState<LegalDoc>(doc);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { box.current?.scrollTo({ top: 0 }); box.current?.focus({ preventScroll: true }); }, [shown]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [onClose]);
+  // The phone's Back button closes this, as it would close a page: without an entry of its own, Back would leave
+  // app.relatch.online and lose the free-try preview again. Closed any other way, the entry is taken back off.
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    let popped = false;
+    window.history.pushState({ ...(window.history.state ?? {}), relatchLegal: true }, '');
+    const pop = () => { popped = true; close.current(); };
+    window.addEventListener('popstate', pop);
+    return () => {
+      window.removeEventListener('popstate', pop);
+      if (!popped && window.history.state?.relatchLegal) window.history.back();
+    };
+  }, []);
+  return createPortal(
+    <div ref={box} data-modal data-legal-overlay role="dialog" aria-modal="true" aria-label={shown === 'terms' ? 'Terms of service' : 'Privacy policy'} tabIndex={-1}
+      className="fixed inset-0 z-[80] overflow-y-auto overscroll-contain bg-ink text-fg outline-none">
+      <LegalPage still doc={shown} onBack={onClose} backLabel="Back to sign-up"
+        onOpen={(p) => { if (p === 'contact') window.location.href = `mailto:${CONTACT_EMAIL}`; else setShown(p); }} />
+    </div>,
+    document.body,
   );
 }

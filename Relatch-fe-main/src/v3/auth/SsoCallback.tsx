@@ -8,13 +8,13 @@
 import { useState } from 'react';
 import { HandleSSOCallback, useSignUp } from '@clerk/react';
 import { appUrls } from './clerkAuth';
-import { appPath } from '../base';
+import { LegalOverlay, type LegalDoc } from '../LegalPage';
 import { readError } from './clerkAuthCore';
 import { RelatchMark } from '../RelatchMark';
 
 // 2026-11-20: the app's own legal pages, as on the sign-up sheet (AuthSheet.tsx)
-const TERMS_URL = appPath('terms-of-service');
-const PRIVACY_URL = appPath('privacy-policy');
+// Later that night they open over this step (LegalOverlay) instead of a new tab, which would be a second copy of
+// the app in the middle of finishing the account.
 
 function go(url: string) {
   window.location.replace(url);
@@ -25,6 +25,7 @@ function Consent() {
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [legal, setLegal] = useState<LegalDoc | null>(null);
 
   async function finish() {
     if (!agreed) return setError('Tick the box to agree to the Terms and Privacy Policy first.');
@@ -48,8 +49,8 @@ function Consent() {
         <label className="mt-5 flex cursor-pointer items-start gap-3 text-[13.5px] leading-[1.5] text-fg-2">
           <input type="checkbox" checked={agreed} onChange={(e) => { setAgreed(e.target.checked); setError(''); }} className="mt-0.5 size-4 shrink-0 accent-white" />
           <span>
-            I agree to the <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="font-medium text-fg underline underline-offset-4">Terms of Service</a> and{' '}
-            <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="font-medium text-fg underline underline-offset-4">Privacy Policy</a>
+            I agree to the <button type="button" onClick={() => setLegal('terms')} className="font-medium text-fg underline underline-offset-4">Terms of Service</button> and{' '}
+            <button type="button" onClick={() => setLegal('privacy')} className="font-medium text-fg underline underline-offset-4">Privacy Policy</button>
           </span>
         </label>
         {error && <p role="alert" className="mt-3 text-[13px] text-[#ff6369]">{error}</p>}
@@ -58,6 +59,7 @@ function Consent() {
         </button>
         <button onClick={() => go(appUrls().appUrl)} className="mt-2 h-10 w-full rounded-full text-[13.5px] text-fg-3 transition-colors hover:text-fg-2">Cancel</button>
       </div>
+      {legal && <LegalOverlay doc={legal} onClose={() => setLegal(null)} />}
     </main>
   );
 }
