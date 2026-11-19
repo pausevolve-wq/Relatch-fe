@@ -59,6 +59,7 @@ const pill = 'inline-flex items-center justify-center gap-2 rounded-full px-5 py
 // 'soon' (2026-11-03, Manas): in its place, Settings opens "Relatch in your agent - coming soon" (ComingSoon.tsx).
 type Page = 'contact' | 'privacy' | 'terms' | 'soon';
 const isPage = (v: string): v is Page => v === 'contact' || v === 'privacy' || v === 'terms' || v === 'soon';
+const PAGE_TITLES: Record<Page, string> = { contact: 'Contact', privacy: 'Privacy policy', terms: 'Terms of service', soon: 'Relatch in your agent' };
 // 2026-11-15 (flip): the legal pages' own addresses, so Clerk's sign-up consent can link straight to them.
 // /legal is the Terms (they link to the Privacy Policy). Opening one shows that page; leaving it puts the address
 // back to the app's own, so a reload doesn't reopen it.
@@ -180,6 +181,14 @@ export default function V3App() {
   useEffect(() => {
     if (page || !legalPageAtUrl()) return;
     window.history.replaceState(window.history.state, '', appPath() + window.location.search + window.location.hash);
+  }, [page]);
+  // 2026-11-19 (launch test): each page of its own has its own tab title (search results, bookmarks, history all
+  // read "Relatch - Turn documents into AI skills" before). Same pattern as the 404's "Page not found · Relatch".
+  useEffect(() => {
+    if (!page) return;
+    const before = document.title;
+    document.title = `${PAGE_TITLES[page]} · Relatch`;
+    return () => { document.title = before; };
   }, [page]);
   // Clerk's account settings, as a pop-up.
   const [account, setAccount] = useState(false);
