@@ -106,8 +106,8 @@ const CLAIM_MESSAGES: Record<ClaimError, string> = {
   taken: 'This free skill was unlocked by another account.',
   retry: "Couldn't unlock your skill just now. Try again in a moment.",
   failed: "Couldn't unlock your skill. Make it again from your account: it's one of today's 3.",
-  // Shown with the reset time after it (runClaim)
-  quota: "Unlocking uses one of today's 3, and you've used them all, so this one stays a preview for now. Keep this tab open: it can be unlocked for 24 hours, so try again once they're back.",
+  // Ends with the reset time on this person's clock (runClaim). Wording picked by Manas 2026-11-19 (reassurance first).
+  quota: "Today's free skills are all used. Your skill is safe for 24 hours: keep this tab open and unlock it after",
 };
 const savedParts = (s: SavedSkill): Part[] => (s.files ?? [{ name: s.name, content: s.content, degraded: s.degraded }]).map((f, n) => ({ key: `${s.id}_${n}`, name: f.name, content: f.content, degraded: f.degraded, status: 'done' as const }));
 const FINISHED: Adding = { canAdd: false, left: 0, closed: 'This skill is finished. Start a new skill to build from more documents.', onAdd: () => {}, complete: () => {} };
@@ -238,7 +238,7 @@ export default function V3App() {
       return;
     }
     wantAction.current = null;
-    const message = r.error === 'quota' ? `${CLAIM_MESSAGES.quota} They come back at ${resetTime()}.` : CLAIM_MESSAGES[r.error];
+    const message = r.error === 'quota' ? `${CLAIM_MESSAGES.quota} ${resetTime()}.` : CLAIM_MESSAGES[r.error];
     // quota: the skill is still held, so the same button unlocks it after the reset (before it, it only says this again)
     setLock({ state: 'failed', message, ...(r.error === 'retry' || r.error === 'quota' ? { retry: () => { void runClaim(); } } : {}) });
     // Nothing on screen to say it on (back from a Google or GitHub sign-up): the corner notice
