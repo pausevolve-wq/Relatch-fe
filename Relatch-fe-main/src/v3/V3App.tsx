@@ -173,7 +173,10 @@ export default function V3App() {
   // A page of its own, without the sidebar: the API platform (Settings > Developer actions; removed 2026-11-03), Contact
   // ("Contact us" on the home screen, "Contact support" in the help menu), or the Privacy policy and
   // Terms of service (the help menu).
-  const [page, setPage] = useState<Page | null>(() => legalPageAtUrl() ?? (place && isPage(place.view) ? place.view : null));
+  // The legal pages come from the address only (2026-11-19, launch test): restoring them from this tab's place too
+  // meant app.relatch.online/ opened the Terms again after someone had read them, e.g. back to the landing page
+  // and "Start for Free" landed on the Terms instead of the upload. Contact and 'soon' still come back on reload.
+  const [page, setPage] = useState<Page | null>(() => legalPageAtUrl() ?? (place && isPage(place.view) && place.view !== 'privacy' && place.view !== 'terms' ? place.view : null));
   useEffect(() => {
     if (page || !legalPageAtUrl()) return;
     window.history.replaceState(window.history.state, '', appPath() + window.location.search + window.location.hash);
