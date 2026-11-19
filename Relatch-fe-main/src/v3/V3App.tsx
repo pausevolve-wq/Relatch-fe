@@ -323,8 +323,11 @@ export default function V3App() {
   // 2026-11-19 (PostHog rebuild): which screen is up. The whole app lives at one address, so without this every
   // click, heatmap point and replay moment is just "/". app_screen and app_overlay ride on every later event
   // (autocaptured clicks and heatmap data included), and screen_viewed marks each change.
-  const screen = stray ? 'not_found' : showPage ? `page_${page}` : job.phase === 'thinking' && !composing && !saved ? 'building'
-    : previewing ? (saved ? 'saved_skill' : 'skill_preview') : composing ? (atHome ? 'home' : 'new_skill') : job.phase === 'error' ? 'job_error' : 'workspace';
+  // 2026-11-20 (found live): 'home' is the intro start screen, 'new_skill' the compact one inside the workspace, by
+  // the same `workspace` test <Start> renders with. It tested atHome, which a first visit never sets, so every
+  // first-time home screen was reported as 'new_skill'.
+  const screen =stray ? 'not_found' : showPage ? `page_${page}` : job.phase === 'thinking' && !composing && !saved ? 'building'
+    : previewing ? (saved ? 'saved_skill' : 'skill_preview') : composing ? (workspace ? 'new_skill' : 'home') : job.phase === 'error' ? 'job_error' : 'workspace';
   const overlay = auth ? `auth_${auth}` : unlock ? 'unlock_sheet' : install ? 'install_guide' : account ? 'account' : null;
   useEffect(() => {
     registerProps({ app_screen: screen, app_overlay: overlay, signed_in: !!isSignedIn });
