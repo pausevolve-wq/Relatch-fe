@@ -30,7 +30,9 @@ const CLAIM_URL = ENRICH_PROXY_URL.replace(/enrich$/, 'claim');
 // Why an unlock didn't happen. limit: this account already unlocked its one free skill. gone: nothing is held
 // any more (24 hours passed, or the server couldn't keep it). taken: another account unlocked it. retry: the
 // network or the server, worth another go. failed: the skills that came back don't match the ones on screen.
-export type ClaimError = 'limit' | 'gone' | 'taken' | 'retry' | 'failed';
+// quota (2026-11-19): an unlock now costs one of the day's 3 (relatch api/claim.js), and this account has none
+// left; nothing was taken or charged, the skill stays held, so it can be tried again after the reset.
+export type ClaimError = 'limit' | 'gone' | 'taken' | 'retry' | 'failed' | 'quota';
 export type ClaimOutcome = { ok: true; action?: ClaimAction } | { ok: false; error: ClaimError };
 
 export type StepStatus = 'active' | 'done' | 'warn';
@@ -273,7 +275,11 @@ export function useSkillJob(target: Target) {
     try {
       res = await fetch(CLAIM_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ claimId, ...(pending?.claimId === claimId && pending.action ? { action: pending.action } : {}) }) });
     } catch { return outcome('retry', false); }
-    if (res.status === 429) return outcome('limit', true);
+    // Two different 429s: QUOTA_REACHED keeps the claim for a later try, CLAIM_LIMIT is final
+    if (res.status === 429) {
+      const err = await res.json().catch(() => null);
+      return err?.error === 'QUOTA_REACHED' ? outcome('quota', false) : outcome('limit', true);
+    }
     if (res.status === 404 || res.status === 400) return outcome('gone', true);
     if (res.status === 409) return outcome('taken', true);
     if (!res.ok) return outcome('retry', false);
