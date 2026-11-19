@@ -18,12 +18,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircleIcon, FileTextIcon, LockSimpleIcon, LockSimpleOpenIcon, XIcon } from '@phosphor-icons/react';
 import { MarkBuddy, type BuddyMood } from './MarkBuddy';
+import { appPath } from '../base';
 import { CodeBoxes, CodeNote, EMAIL, noAutofill, normalEmail, useEmailCode, type EmailRefusal, type EmailVerdict, type Outcome, type Purpose } from './emailCode';
 import { useAuthApi } from './authApi';
 import { cn } from '@/lib/utils';
 import { readStorage } from '@/engine/core';
 import { captureEvent } from '../../analytics';
-import { appPath } from '../base';
 
 export type Provider = 'google' | 'github';
 /** The unlock sheet (2026-11-15, Manas's hybrid plan): a signed-out visitor's free skill is shown as a preview;
