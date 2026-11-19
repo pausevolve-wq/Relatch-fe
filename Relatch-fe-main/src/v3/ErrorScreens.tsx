@@ -4,6 +4,9 @@
 //                  and Vercel rewrites every path to index.html, so without this a mistyped or old link just
 //                  opened the app as if nothing were wrong. Still a soft 404 (the server answers 200), so the
 //                  page marks itself noindex.
+//                  2026-11-19: no longer soft. vercel.json rewrites only APP_PATHS (below) to the app; anything
+//                  else is served dist/404.html (a copy of v3.html, vite.config.ts) with status 404, which lands
+//                  here. The noindex stays as a second guard.
 //   CrashScreen  - the app itself failed while drawing (AppErrorBoundary, round the whole app in main.tsx).
 //                  It leans on nothing that may be what broke: no Clerk, no app state, no canvas background.
 // The Relatch mark is the character, as on the sign-up sheet (MarkBuddy): on the 404 it is the "0", looking

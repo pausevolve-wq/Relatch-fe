@@ -8,7 +8,9 @@
     { "source": "/goal", "destination": "/", "permanent": false }
   ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/v3.html" }
+    { "source": "/", "destination": "/v3.html" },
+    { "source": "/:page(sso-callback|privacy-policy|terms-of-service|legal|index\\.html)", "destination": "/v3.html" },
+    { "source": "/:page(sso-callback|privacy-policy|terms-of-service|legal)/", "destination": "/v3.html" }
   ],
   "headers": [
     {
