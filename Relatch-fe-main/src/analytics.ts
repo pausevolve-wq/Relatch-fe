@@ -1,30 +1,9 @@
 // Analytics bootstrap — moved out of index.html to allow CSP without 'unsafe-inline' in script-src.
 // Imported from src/main.tsx before React mounts so page-load attribution timing is preserved.
 
-// ─── Google Tag Manager ───────────────────────────────────────────────────────
-(function (w: any, d: Document, s: string, l: string, i: string) {
-  w[l] = w[l] || [];
-  w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
-  const f = d.getElementsByTagName(s)[0];
-  const j = d.createElement(s) as HTMLScriptElement;
-  const dl = l !== 'dataLayer' ? '&l=' + l : '';
-  j.async = true;
-  j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
-  f.parentNode!.insertBefore(j, f);
-})(window, document, 'script', 'dataLayer', 'GTM-P5K7B3C5');
-
-// ─── Google tag (gtag.js / GA4) ───────────────────────────────────────────────
-const gtagScript = document.createElement('script');
-gtagScript.async = true;
-gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-3S6Z146BBL';
-document.head.appendChild(gtagScript);
-
-(window as any).dataLayer = (window as any).dataLayer || [];
-function gtag(...args: any[]) {
-  (window as any).dataLayer.push(args);
-}
-gtag('js', new Date());
-gtag('config', 'G-3S6Z146BBL');
+// 2026-11-20: Google Tag Manager (GTM-P5K7B3C5) and Google Analytics 4 (G-3S6Z146BBL) removed (Manas: neither is
+// used for analytics; PostHog is). GTM's only tag was Microsoft Clarity, which the CSP blocks, so it did nothing but
+// log a CSP error on every page load. Search Console is verified by DNS, not by either tag. Their hosts left the CSP.
 
 // ─── PostHog ──────────────────────────────────────────────────────────────────
 !(function (t: any, e: any) {
