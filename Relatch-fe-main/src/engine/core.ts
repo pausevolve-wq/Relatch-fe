@@ -1190,6 +1190,32 @@ export function sanitizeYamlValue(val: string): string {
   return val;
 }
 
+// The items of a one-line YAML list's inside (`"a, b", c` -> [`"a, b"`, ` c`]), split only on commas outside
+// quotes. Found 2026-11-19 in the launch test: a plain split(',') cut "A refund totals $1,820 ..." in two,
+// and the skill header then said "$1; 820". A quote opens only at the start of an item, so an apostrophe in
+// plain text (customer's) is just a letter. An unclosed quote keeps the rest as one item.
+export function splitYamlListItems(items: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let quote: string | null = null;
+  for (let i = 0; i < items.length; i++) {
+    const c = items[i];
+    if (quote) {
+      cur += c;
+      if (c === '\\' && quote === '"' && i + 1 < items.length) cur += items[++i];
+      else if (c === quote) quote = null;
+    } else if ((c === '"' || c === "'") && !cur.trim()) {
+      quote = c;
+      cur += c;
+    } else if (c === ',') {
+      out.push(cur);
+      cur = '';
+    } else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
 export function generateFallbackSkill(rawText: string, fileName: string, category: string): string {
   // Matches enrich.js's own skillName derivation exactly, so a fallback file's frontmatter
   // has the same shape a successful Gemini generation would have had. Without this, the
@@ -1370,7 +1396,7 @@ export function fixAiYamlFrontmatter(content: string): string {
           return `${key}${sanitizeYamlValue(trimmed)}`;
         })
         .replace(/^(use_cases:\s*\[)(.+?)(\])$/m, (_l: string, prefix: string, items: string, suffix: string) => {
-          const fixed = items.split(',').map((item: string) => {
+          const fixed = splitYamlListItems(items).map((item: string) => {
             const t = item.trim();
             if ((t.startsWith('"') && t.endsWith('"')) ||
                 (t.startsWith("'") && t.endsWith("'"))) return ` ${t}`;
