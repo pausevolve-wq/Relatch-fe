@@ -18,7 +18,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircleIcon, FileTextIcon, LockSimpleIcon, LockSimpleOpenIcon, XIcon } from '@phosphor-icons/react';
 import { MarkBuddy, type BuddyMood } from './MarkBuddy';
-import { appPath } from '../base';
+import { LegalOverlay, type LegalDoc } from '../LegalPage';
 import { CodeBoxes, CodeNote, EMAIL, noAutofill, normalEmail, useEmailCode, type EmailRefusal, type EmailVerdict, type Outcome, type Purpose } from './emailCode';
 import { useAuthApi } from './authApi';
 import { cn } from '@/lib/utils';
@@ -61,8 +61,7 @@ const HINTS: Record<Field, string> = { email: 'Your email', password: 'Your pass
 /** The live public pages (V3's in-app copies have no URL of their own); a new tab keeps the half-filled sheet */
 // 2026-11-20: the app's own legal pages (they have addresses since the 11-15 flip). app.relatch.online is the
 // one address Relatch shares, so the consent a sign-up agrees to is read there, not on relatch.online.
-const TERMS_URL = appPath('terms-of-service');
-const PRIVACY_URL = appPath('privacy-policy');
+// Later the same night: they open over this sheet (LegalOverlay), not in a new tab - see LegalPage.tsx.
 const AGREE_FIRST = 'Tick the box to agree to the Terms and Privacy Policy first.';
 /** Wait this long after typing stops on a wrongly shaped email before the mark doubts it */
 const DOUBT_AFTER = 1200;
@@ -175,6 +174,8 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
   useEffect(() => { if (mode === 'login') signInEvent('clerk_signin_opened'); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (unlock) signInEvent('unlock_sheet_opened', { action: unlock.action, agent: unlock.agent }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const signup = mode === 'signup';
+  // The Terms or Privacy Policy open over the sheet (LegalOverlay), never in another tab
+  const [legal, setLegal] = useState<LegalDoc | null>(null);
   // 2026-11-19 (PostHog rebuild): what this sheet is starting, noted before a sign-in can leave the page (Google,
   // GitHub), so useIdentify can count it when the account comes back signed in. Sign-ups get their own start event.
   // Once per sheet and method: a resent code or a second tap is not a second start.
@@ -295,7 +296,8 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
 
   useEffect(() => {
     // Caught on the way down, so Escape closes this sheet and not a panel under it
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    // (the Terms / Privacy overlay over this sheet takes its own Escape)
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('[data-legal-overlay]')) { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   }, [onClose]);
@@ -307,7 +309,7 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
     panel.current?.focus({ preventScroll: true });
     const trap = (e: KeyboardEvent) => {
       const el = panel.current;
-      if (e.key !== 'Tab' || !el) return;
+      if (e.key !== 'Tab' || !el || document.querySelector('[data-legal-overlay]')) return;
       const items = [...el.querySelectorAll<HTMLElement>('button, a[href], input, [tabindex]:not([tabindex="-1"])')]
         .filter((n) => !(n as HTMLButtonElement).disabled && n.getClientRects().length > 0);
       if (!items.length) return;
@@ -572,7 +574,7 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
     : all && mode === 'login' ? (unlock ? 'Log in and unlock' : 'Log in')
     : 'Continue';
 
-  return createPortal(
+  return <>{createPortal(
     // data-modal: a press in here is not "outside" a popover under it (useDismiss), as for Modal
     <div data-modal className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 backdrop-blur-md sm:items-center sm:p-6" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
@@ -675,9 +677,9 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
               />
               <span>
                 I agree to the{' '}
-                <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className={textLink}>Terms of Service</a>
+                <button type="button" onClick={() => setLegal('terms')} className={textLink}>Terms of Service</button>
                 {' '}and{' '}
-                <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className={textLink}>Privacy Policy</a>
+                <button type="button" onClick={() => setLegal('privacy')} className={textLink}>Privacy Policy</button>
               </span>
             </label>
           )}
@@ -709,5 +711,5 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
       </div>
     </div>,
     document.body,
-  );
+  )}{legal && <LegalOverlay doc={legal} onClose={() => setLegal(null)} />}</>;
 }
