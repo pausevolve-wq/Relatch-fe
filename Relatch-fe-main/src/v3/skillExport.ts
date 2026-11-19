@@ -15,7 +15,7 @@
 //   Agents, one file : <slug>-agent-skill.zip  -> README.md + <slug>/SKILL.md, references/, agents/openai.yaml
 //   Agents, a set    : <slug>-agent-skills.zip -> README.md + one such folder per part
 import type JSZip from 'jszip';
-import { formatCodexDisplayName, isGenericCodexDescription, toSkillSlug } from '@/engine/core';
+import { formatCodexDisplayName, isGenericCodexDescription, splitYamlListItems, toSkillSlug } from '@/engine/core';
 
 export type Target = 'claude' | 'codex' | 'agents';
 // One finished skill file: its own skill name and its text.
@@ -41,7 +41,9 @@ function headerFields(content: string): [string, string | string[]][] {
     const unq = (v: string) => v.trim().replace(/^"([\s\S]*)"$|^'([\s\S]*)'$/, '$1$2').replace(/\\"/g, '"');
     if (kv) {
       const v = kv[2].trim();
-      out.push([kv[1], v.startsWith('[') ? [...v.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/g)].map((m) => unq(m[1] ?? m[2])).filter(Boolean) : v ? unq(v) : []]);
+      // A `[...]` list: every item, quoted or not (2026-11-19: only quoted items were read, so `[a, b]` vanished
+      // from the metadata and the description), split on commas outside quotes only
+      out.push([kv[1], v.startsWith('[') ? splitYamlListItems(v.slice(1, v.endsWith(']') ? -1 : undefined)).map(unq).filter(Boolean) : v ? unq(v) : []]);
     } else if (item && out.length && Array.isArray(out[out.length - 1][1])) (out[out.length - 1][1] as string[]).push(unq(item[1]));
   }
   return out;
