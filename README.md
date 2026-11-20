@@ -20,7 +20,7 @@
 <a href="https://github.com/pausevolve-wq/Relatch-fe/commits"><img alt="Last commit" src="https://img.shields.io/github/last-commit/pausevolve-wq/Relatch-fe?style=for-the-badge&labelColor=000000&color=111111" /></a>
 <img alt="Top language" src="https://img.shields.io/github/languages/top/pausevolve-wq/Relatch-fe?style=for-the-badge&labelColor=000000&color=111111" />
 <img alt="Code size" src="https://img.shields.io/github/languages/code-size/pausevolve-wq/Relatch-fe?style=for-the-badge&labelColor=000000&color=111111" />
-<img alt="Licence" src="https://img.shields.io/badge/licence-all_rights_reserved-111111?style=for-the-badge&labelColor=000000" />
+<a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-proprietary-111111?style=for-the-badge&labelColor=000000" /></a>
 
 <br />
 <br />
@@ -193,7 +193,7 @@ A new app address has to be added to **both** the rewrite list and the app's own
 
 ## Licence
 
-Copyright © 2026 Relatch. **All rights reserved.** The source is public so you can see how the app is built. It is not open source, and no licence to reuse it is granted.
+Copyright © 2026 Manas Harit. **All rights reserved.** Relatch is proprietary software, not open source. This code is public for viewing only. Copying it, running it, hosting or self-hosting it, or reverse engineering it is not permitted. See [LICENSE](LICENSE). The only way to use Relatch is the hosted app at [app.relatch.online](https://app.relatch.online).
 
 <br />
 
