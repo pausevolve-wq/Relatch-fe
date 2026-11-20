@@ -28,6 +28,10 @@ const SANDBOX_CRASH = (() => {
   if (!import.meta.env.VITE_SANDBOX) return false;
   try { const on = sessionStorage.getItem('sbx_crash') === '1'; sessionStorage.removeItem('sbx_crash'); return on; } catch { return false; }
 })();
+// The first-skill note's wait once the screen is clear: a moment after the install guide closes, or a while with the
+// full skill after a Read / Copy unlock, so it never covers the skill they just unlocked before they've read it.
+const NOTE_AFTER_DOWNLOAD = 900;
+const NOTE_AFTER_UNLOCK = 20_000;
 // SANDBOX ONLY: the sandbox bar's "Show the feedback note" opens the note on the next load, once
 const SANDBOX_NOTE = (() => {
   if (!import.meta.env.VITE_SANDBOX) return false;
@@ -210,6 +214,7 @@ export default function V3App() {
   const [noteDue, setNoteDue] = useState(SANDBOX_NOTE);
   const [noteOpen, setNoteOpen] = useState(false);
   const noteTarget = useRef<Target>(target); // the agent of the skill they downloaded, sent with the note
+  const noteWait = useRef(NOTE_AFTER_DOWNLOAD); // how long the screen stays clear before the note comes in
   if (SANDBOX_CRASH) throw new Error('Sandbox: a crash on purpose (sandbox bar)');
   // Settings > Your data: skill history paused, so new skills are not kept (the way back is in the rail).
   const [paused, setPaused] = useState(() => { try { return localStorage.getItem('relatch_v3_history_paused') === '1'; } catch { return false; } });
@@ -248,6 +253,11 @@ export default function V3App() {
       const a = r.action ?? wantAction.current;
       wantAction.current = null;
       if (a) setResume(a);
+      // 2026-11-20: the first-skill note is due on the unlock itself. It used to wait for a download only, but with
+      // ANON_PREVIEW_ONLY on nobody without an account can download, so anyone who unlocked to Read or Copy never
+      // saw it (feedback_note_shown had never fired in production). A download unlock keeps its own path
+      // (`downloaded`, after the install guide); Read and Copy get a while with the full skill first.
+      if (a !== 'download' && NOTE_READY && !noteSeen()) { noteTarget.current = job.target; noteWait.current = NOTE_AFTER_UNLOCK; setNoteDue(true); }
       return;
     }
     wantAction.current = null;
@@ -401,13 +411,14 @@ export default function V3App() {
     lastDownload.current = { of, name, plan };
     setInstall({ target: t, name, plan, parts });
     noteTarget.current = t;
-    if ((!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen()) setNoteDue(true);
+    // Already due from a Read / Copy unlock: a download now brings it in after the guide, not after the long wait
+    if (noteDue || ((!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen())) { noteWait.current = NOTE_AFTER_DOWNLOAD; setNoteDue(true); }
     fromUnlock.current = false;
   };
   // Never over another pop-up or page: it waits until the install guide, the sign-up sheet and the 404 are gone
   useEffect(() => {
     if (!noteDue || install || auth || stray || showPage) return;
-    const timer = window.setTimeout(() => { setNoteDue(false); setNoteOpen(true); }, 900);
+    const timer = window.setTimeout(() => { setNoteDue(false); setNoteOpen(true); }, noteWait.current);
     return () => window.clearTimeout(timer);
   }, [noteDue, install, auth, stray, showPage]);
 
