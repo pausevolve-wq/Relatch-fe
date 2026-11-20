@@ -25,7 +25,7 @@
 <br />
 <br />
 
-**[Open the app](https://app.relatch.online)** &nbsp;·&nbsp; [relatch.online](https://relatch.online) &nbsp;·&nbsp; [How it works](#how-it-works) &nbsp;·&nbsp; [Inside the app](#inside-the-app) &nbsp;·&nbsp; [Design language](#design-language) &nbsp;·&nbsp; [Run it locally](#run-it-locally) &nbsp;·&nbsp; [Backend](https://github.com/pausevolve-wq/relatch)
+**[Open the app](https://app.relatch.online)** &nbsp;·&nbsp; [relatch.online](https://relatch.online) &nbsp;·&nbsp; [How it works](#how-it-works) &nbsp;·&nbsp; [Inside the app](#inside-the-app) &nbsp;·&nbsp; [Design language](#design-language) &nbsp;·&nbsp; [Backend](https://github.com/pausevolve-wq/relatch)
 
 </div>
 
@@ -173,29 +173,6 @@ Relatch-fe-main/
 `index.html`, `src/main.tsx` and `src/App.tsx` are the previous (V2) app. They stay in the repo as a rollback path and are **not built**.
 
 </details>
-
-<br />
-
-## Run it locally
-
-**Prerequisites:** Node.js **20.19+** or **22.12+** (Vite 7's floor) and a Clerk publishable key.
-
-```bash
-cd Relatch-fe-main
-npm install
-
-# .env.local
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-
-npm run dev        # then open http://localhost:5173/v3.html
-npm run build      # production build into dist/
-npm run preview    # serve the build locally
-```
-
-> [!IMPORTANT]
-> In development, `/` still serves the legacy `index.html`. **Open `/v3.html`** to get the current app.
->
-> The app talks to the production Relatch API, which only accepts requests from `app.relatch.online`. Locally, every screen, the sign-up flow and in-browser extraction all work, but compiling a skill end to end needs the deployed origin.
 
 <br />
 
