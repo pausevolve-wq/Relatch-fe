@@ -41,7 +41,12 @@ export function useIdentify() {
         const intent = takeAuthIntent();
         if (prevSignedIn.current === false || intent) {
           const method = intent?.method || provider || 'email';
-          const isNew = !!user.createdAt && Date.now() - new Date(user.createdAt).getTime() < NEW_ACCOUNT_MS;
+          // 2026-11-20: an account that already existed when this sign-in started is not new, however young it is.
+          // Live test 07:53Z: sign-up in one tab, Google sign-in in another 3 min later, and user_signed_up fired
+          // twice. The minute of slack covers a phone clock a little off from Clerk's (createdAt is server time).
+          const created = user.createdAt ? new Date(user.createdAt).getTime() : 0;
+          const existedBefore = !!intent && !!created && created < intent.at - 60_000;
+          const isNew = !!created && !existedBefore && Date.now() - created < NEW_ACCOUNT_MS;
           const via = intent?.via ?? 'direct';
           const props = { method, kind: isNew ? 'signup' : 'login', via, unlock_action: intent?.action };
           if (isNew) identifyUser(user.id, {}, { signed_up_via: via, signed_up_method: method, signed_up_at: new Date().toISOString() });
