@@ -188,7 +188,11 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
   const download = async () => {
     if (!signedIn) return onSignUp(ask('download'));
     if (locked) return lock?.state === 'failed' ? lock.retry?.() : undefined;
-    const r = await downloadSkill(target, name, skill);
+    // 2026-11-20: never a silent dead button again (a failed download used to do nothing at all, found live)
+    const r = await downloadSkill(target, name, skill).catch((err: unknown) => {
+      captureEvent('skill_export_failed', { action: 'download', target, error: String((err as Error)?.message ?? err).slice(0, 200) });
+      return { saved: false, note: "The download didn't start. Refresh the page and try again." };
+    });
     setNote(r.note);
     if (!r.saved) return;
     // 2026-11-19 (PostHog rebuild): the skill left Relatch, the clearest "this was worth it" signal there is
