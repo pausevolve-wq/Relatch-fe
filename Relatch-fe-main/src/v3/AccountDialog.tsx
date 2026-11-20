@@ -11,7 +11,10 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal label="Your account" onClose={onClose} className="w-auto max-w-full">
       <button aria-label="Close" onClick={onClose} className="absolute -top-11 right-0 grid size-9 place-items-center rounded-full text-fg-2 transition-colors hover:bg-white/[0.06] hover:text-fg focus-visible:outline-2 focus-visible:outline-white/60"><XIcon size={17} /></button>
-      <UserProfile routing="hash" />
+      {/* 2026-11-20 (Manas, on a phone): Security showed "Delete account" twice, Clerk's white section title above
+          its red button, and the title looked like a button that did nothing. Only the title is hidden here, on
+          this component: the ClerkProvider's appearance (main.tsx, fragile) is untouched. */}
+      <UserProfile routing="hash" appearance={{ elements: { profileSectionTitle__danger: { display: 'none' } } }} />
     </Modal>
   );
 }
