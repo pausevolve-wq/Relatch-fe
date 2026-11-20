@@ -14,7 +14,10 @@
 // Since 2026-11-02 a third target, Agents: one folder any agent that reads skills can load (see agentsFiles):
 //   Agents, one file : <slug>-agent-skill.zip  -> README.md + <slug>/SKILL.md, references/, agents/openai.yaml
 //   Agents, a set    : <slug>-agent-skills.zip -> README.md + one such folder per part
-import type JSZip from 'jszip';
+// 2026-11-20: a static import, not `await import('jszip')`. Lazy, jszip was its own hashed file, and each deploy
+// renamed it: a tab opened before a deploy then asked for the old file (404) and Download did nothing at all
+// (live on a phone 08:25Z: "Failed to fetch dynamically imported module"). In the one bundle it can't go missing.
+import JSZip from 'jszip';
 import { formatCodexDisplayName, isGenericCodexDescription, splitYamlListItems, toSkillSlug } from '@/engine/core';
 
 export type Target = 'claude' | 'codex' | 'agents';
@@ -371,7 +374,6 @@ export async function downloadSkill(target: Target, name: string, parts: SkillPa
     save(new Blob([claudeFile(parts[0].content, name)], { type: 'text/markdown;charset=utf-8' }), plan.file);
     return { saved: true, note: null };
   }
-  const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const skipped = pack(zip, target, name, parts);
   if (skipped.length === parts.length) return { saved: false, note: parts.length === 1 ? 'This skill came out empty. Try building it again.' : 'These skills came out empty. Try building them again.' };
@@ -385,7 +387,6 @@ export async function downloadSkill(target: Target, name: string, parts: SkillPa
 // Since 2026-11-02 also an Agents folder, one sub-folder per skill (its README sits beside its folders).
 export async function downloadAll(skills: { target: Target; name: string; parts: SkillPart[] }[]): Promise<boolean> {
   if (!skills.length) return false;
-  const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const used = new Set<string>();
   for (const s of skills) {

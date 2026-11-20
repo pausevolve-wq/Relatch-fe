@@ -2,6 +2,9 @@
 // Moved byte-identically out of App.tsx (see scripts/extract-engine.mjs); only `export` was added.
 // No React, no Clerk: UI code imports from here.
 import * as pdfjsLib from "pdfjs-dist";
+// 2026-11-20: static, not `await import('jszip')`: a lazy jszip was its own hashed file that each deploy renamed,
+// so a tab opened before a deploy failed to read .docx files (and to download ZIPs, src/v3/skillExport.ts).
+import JSZip from "jszip";
 import { captureEvent } from "../analytics";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -427,7 +430,6 @@ export async function extractDocxText(file: File, sessionId?: string): Promise<E
   const warnings: string[] = [];
   try {
     const buffer = await readAsArrayBuffer(file);
-    const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(buffer);
     const docXml = await zip.file('word/document.xml')?.async('string');
     if (!docXml) throw new Error('word/document.xml missing');
