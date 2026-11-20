@@ -231,7 +231,9 @@ export function useSkillJob(target: Target) {
       patch(id, (it) => ({ ...it, status: 'done', result }));
     } catch (err: any) {
       // 2026-11-19 (PostHog rebuild): counted before the stale check, like skill_generated
-      captureEvent('skill_generation_failed', {
+      // 2026-11-20: renamed from skill_generation_failed, which the engine (core.ts) already sends per failed AI call
+      // with an error_code - the same name counted enrich failures twice. This one also covers unreadable files.
+      captureEvent('skill_failed', {
         target: target_, set_id: s.id, signed_in: s.signedIn, seconds: Math.round((performance.now() - startedAt) / 1000),
         error: err?.isQuotaError ? 'quota' : err?.isAnonTokenInvalid ? 'trial-used' : typeof err?.message === 'string' ? 'unreadable_or_failed' : 'failed',
         ...facts,
@@ -261,7 +263,9 @@ export function useSkillJob(target: Target) {
     setRestored(null);
     setItems([]);
     start(files.slice(0, MAX_FILES), seq);
-    captureEvent('skill_generation_started', { target, set_id: session.current.id, signed_in: !!isSignedIn, documents: Math.min(files.length, MAX_FILES), dropped: Math.max(0, files.length - MAX_FILES) });
+    // 2026-11-20: renamed from skill_generation_started, which the engine (core.ts) already sends once per document;
+    // the same name counted every start twice. This is one per set (documents = how many went in).
+    captureEvent('skill_set_started', { target, set_id: session.current.id, signed_in: !!isSignedIn, documents: Math.min(files.length, MAX_FILES), dropped: Math.max(0, files.length - MAX_FILES) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ensureAccess, target, isSignedIn]);
 

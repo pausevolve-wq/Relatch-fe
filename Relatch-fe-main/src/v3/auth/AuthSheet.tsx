@@ -353,7 +353,10 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
   }
 
   function finish(method: string) {
-    if (unlock) signInEvent('unlock_auth_success', { action: unlock.action, mode: signup ? 'signup' : 'login', method });
+    // 2026-11-20: not for Google / GitHub. Their finish() runs when the redirect starts, before Google has said yes,
+    // so it counted abandoned sign-ins as successes and doubled every real one (PostHog, 11-19 20:36Z: one at :00 on
+    // the anonymous id, one at :10 from useIdentify after the return). useIdentify sends theirs once they're back.
+    if (unlock && method !== 'google' && method !== 'github') signInEvent('unlock_auth_success', { action: unlock.action, mode: signup ? 'signup' : 'login', method });
     setDone(true);
     setWorking(null);
     setHops((n) => n + 1);
