@@ -86,7 +86,7 @@ function Received({ email, name, topic, message, backLabel, onBack, onAgain }: {
   }, []);
 
   return (
-    <div ref={root} role="status" aria-live="polite" className="relative isolate flex flex-col items-center overflow-hidden rounded-[24px] border border-line bg-ink-1 px-6 pb-10 pt-12 text-center sm:px-10">
+    <div ref={root} role="status" aria-live="polite" data-ph-mask className="ph-sensitive relative isolate flex flex-col items-center overflow-hidden rounded-[24px] border border-line bg-ink-1 px-6 pb-10 pt-12 text-center sm:px-10">
       <div data-warm aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[-190px] -z-10 -ml-[290px] size-[580px] rounded-full bg-[radial-gradient(closest-side,rgb(255_244_230/0.11),transparent)]" />
       <div className="relative grid size-16 place-items-center">
         <span data-ring aria-hidden="true" className="absolute inset-0 rounded-full border border-white/40 opacity-0" />

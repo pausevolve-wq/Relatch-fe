@@ -415,12 +415,13 @@ export default function V3App() {
     if (noteDue || ((!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen())) { noteWait.current = NOTE_AFTER_DOWNLOAD; setNoteDue(true); }
     fromUnlock.current = false;
   };
-  // Never over another pop-up or page: it waits until the install guide, the sign-up sheet and the 404 are gone
+  // Never over another pop-up or page: it waits until the install guide, the sign-up sheet, the account
+  // settings (2026-11-20: likely inside the 20s after a Read / Copy unlock) and the 404 are gone
   useEffect(() => {
-    if (!noteDue || install || auth || stray || showPage) return;
+    if (!noteDue || install || auth || account || stray || showPage) return;
     const timer = window.setTimeout(() => { setNoteDue(false); setNoteOpen(true); }, noteWait.current);
     return () => window.clearTimeout(timer);
-  }, [noteDue, install, auth, stray, showPage]);
+  }, [noteDue, install, auth, account, stray, showPage]);
 
   if (stray) {
     // Back into the app at its own address; it opens wherever they were, as any visit does
