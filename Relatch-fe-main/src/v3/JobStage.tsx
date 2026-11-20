@@ -251,7 +251,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
             <button key={p.key} role="menuitemradio" aria-checked={p.key === part.key} onClick={() => { setSel(p.key); setMenu(false); scroller.current?.scrollTo({ top: 0 }); }} className={cn('flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.06]', p.key === part.key && 'bg-white/[0.06]', ring)}>
               <FileTextIcon size={15} className="shrink-0 text-fg-2" />
               <span className="min-w-0 flex-1">
-                <span data-ph-mask className={cn('block truncate text-[13.5px]', p.status === 'done' ? 'text-fg' : 'text-fg-2')}>{p.name}</span>
+                <span data-ph-mask className={cn('ph-sensitive block truncate text-[13.5px]', p.status === 'done' ? 'text-fg' : 'text-fg-2')}>{p.name}</span>
                 {p.status !== 'done' && <span className={cn('block truncate text-[12px]', p.status === 'error' ? 'text-amber-200/90' : 'text-fg-3')}>{p.status === 'thinking' ? 'Writing…' : p.note || "Couldn't be written"}</span>}
               </span>
               {p.status === 'thinking' ? <CircleNotchIcon size={14} className="shrink-0 animate-spin text-fg-3" /> : p.key === part.key ? <CheckIcon size={14} weight="bold" className="shrink-0 text-fg" /> : null}

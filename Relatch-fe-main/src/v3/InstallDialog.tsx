@@ -64,10 +64,10 @@ export function InstallDialog({ target, name, parts, plan, onClose }: { target: 
             underneath for an agent that cannot install from its chat. */}
         {agent === 'agents'
           ? <>
-              <div className="mt-6"><AgentScene key={agent} file={download.file} skill={download.folders[0] || toSkillSlug(shown) || 'your-skill'} title={listing.title} real={!!name.trim()} /></div>
+              <div data-ph-mask className="mt-6 ph-sensitive"><AgentScene key={agent} file={download.file} skill={download.folders[0] || toSkillSlug(shown) || 'your-skill'} title={listing.title} real={!!name.trim()} /></div>
               <AgentsSetup folder={download.folders[0] || toSkillSlug(shown) || 'your-skill'} file={download.file} />
             </>
-          : <div className="mt-6"><SetupScene key={agent} target={agent} slug={toSkillSlug(shown) || 'your-skill'} name={shown} real={!!name.trim()} title={listing.title} about={listing.about} file={download.file} folders={download.folders} /></div>}
+          : <div data-ph-mask className="mt-6 ph-sensitive"><SetupScene key={agent} target={agent} slug={toSkillSlug(shown) || 'your-skill'} name={shown} real={!!name.trim()} title={listing.title} about={listing.about} file={download.file} folders={download.folders} /></div>}
       </div>
     </div>
   );
@@ -79,7 +79,7 @@ export function InstallDialog({ target, name, parts, plan, onClose }: { target: 
 function AgentsSetup({ folder, file }: { folder: string; file: string }) {
   const code = (t: string) => t.split('`').map((p, i) => (i % 2 ? <code key={i} className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[12.5px] text-fg">{p}</code> : p));
   return (
-    <details className="group mt-6 rounded-2xl border border-line bg-ink-2">
+    <details data-ph-mask className="ph-sensitive group mt-6 rounded-2xl border border-line bg-ink-2">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-[14px] text-fg sm:px-5 [&::-webkit-details-marker]:hidden">Or install it by hand<CaretDownIcon size={14} className="shrink-0 text-fg-2 transition-transform duration-300 group-open:rotate-180" /></summary>
       <div className="border-t border-line px-4 pb-4 pt-3.5 sm:px-5 sm:pb-5">
       <p className="text-[14.5px] text-fg">{code(`Unzip ${file}, then put the \`${folder}\` folder where your agent reads skills:`)}</p>

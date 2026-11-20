@@ -137,6 +137,7 @@ function PauseDialog({ onCancel, onPause }: { onCancel: () => void; onPause: () 
 function HistoryPanel({ skills, paused, onPaused, onBack }: { skills: SavedSkill[]; paused: boolean; onPaused: (p: boolean) => void; onBack: () => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!box.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -144,9 +145,14 @@ function HistoryPanel({ skills, paused, onPaused, onBack }: { skills: SavedSkill
   }, []);
   const exportAll = async () => {
     setBusy(true);
+    setFailed(false);
     try {
-      await downloadAll(skills.map((s) => ({ target: s.target, name: s.name, parts: (s.files ?? [{ name: s.name, content: s.content }]).map((f) => ({ name: f.name, content: f.content })) })));
-      captureEvent('skill_exported', { action: 'download_all', skills: skills.length, claude: skills.filter((s) => s.target === 'claude').length, codex: skills.filter((s) => s.target === 'codex').length, agents: skills.filter((s) => s.target === 'agents').length });
+      // 2026-11-20 (pre-launch review): counted only when a ZIP was saved, and a failure says so (it was silent)
+      const saved = await downloadAll(skills.map((s) => ({ target: s.target, name: s.name, parts: (s.files ?? [{ name: s.name, content: s.content }]).map((f) => ({ name: f.name, content: f.content })) })));
+      if (saved) captureEvent('skill_exported', { action: 'download_all', skills: skills.length, claude: skills.filter((s) => s.target === 'claude').length, codex: skills.filter((s) => s.target === 'codex').length, agents: skills.filter((s) => s.target === 'agents').length });
+    } catch (err) {
+      setFailed(true);
+      captureEvent('skill_export_failed', { action: 'download_all', error: String((err as Error)?.message ?? err).slice(0, 200) });
     } finally { setBusy(false); }
   };
   return (
@@ -161,6 +167,7 @@ function HistoryPanel({ skills, paused, onPaused, onBack }: { skills: SavedSkill
         <button disabled={!skills.length || busy} onClick={exportAll} className={cn('mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-line-2 text-[13.5px] text-fg transition-colors hover:bg-white/[0.06] disabled:pointer-events-none disabled:opacity-40', ring)}>
           <DownloadSimpleIcon size={15} />{busy ? 'Preparing…' : 'Download all skills'}
         </button>
+        {failed && <p role="status" className="mt-2 text-[12.5px] text-amber-100">The download didn't start. Refresh the page and try again.</p>}
         <div className="mt-auto pt-8">
           {paused ? (
             <div className="rounded-xl border border-line bg-white/[0.02] p-3">
@@ -414,12 +421,12 @@ export function Sidebar({ skills, activeId, building, buildingActive, open, coll
             <div key={s.id} className={row(s.id === activeId)}>
               <button onClick={() => onOpen(s.id)} aria-current={s.id === activeId ? 'true' : undefined} className={cn('flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2.5 pr-1 text-left text-[13.5px]', ring)}>
                 <TargetLogo target={s.target} size={14} />
-                <span data-ph-mask className="truncate">{s.name}</span>
+                <span data-ph-mask className="ph-sensitive truncate">{s.name}</span>
               </button>
               {/* The age gives way to the remove button on hover or keyboard focus. */}
               <span className="relative mr-1.5 grid h-6 w-7 shrink-0 place-items-center">
                 <span className="text-[12px] text-fg-3 transition-opacity group-focus-within/row:opacity-0 group-hover/row:opacity-0">{ago(s.createdAt)}</span>
-                <button onClick={() => onRemove(s.id)} aria-label={`Remove ${s.name}`} className={cn('pointer-events-none absolute inset-0 grid place-items-center rounded-md text-fg-3 opacity-0 transition-opacity hover:bg-white/[0.08] hover:text-fg focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100', ring)}>
+                <button onClick={() => onRemove(s.id)} aria-label={`Remove ${s.name}`} className={cn('ph-sensitive pointer-events-none absolute inset-0 grid place-items-center rounded-md text-fg-3 opacity-0 transition-opacity hover:bg-white/[0.08] hover:text-fg focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100', ring)}>
                   <XIcon size={13} />
                 </button>
               </span>

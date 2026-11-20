@@ -597,7 +597,7 @@ export function AuthSheet({ view, onClose, unlock }: { view: 'sign-in' | 'sign-u
           <div ref={ticket} className="mb-5 mr-10 flex items-center gap-3 rounded-2xl border border-line-2 bg-white/[0.03] px-3.5 py-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-fg"><FileTextIcon size={18} /></span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14.5px] font-medium text-fg">{unlock.name}</span>
+              <span data-ph-mask className="ph-sensitive block truncate text-[14.5px] font-medium text-fg">{unlock.name}</span>
               <span className="block truncate text-[12.5px] text-fg-2">{unlock.agent} skill · {unlock.sections} {unlock.sections === 1 ? 'section' : 'sections'}</span>
             </span>
             <span className={cn('grid size-8 shrink-0 place-items-center rounded-full transition-colors duration-300', done ? 'bg-white text-black' : 'bg-white/[0.06] text-fg-2')} aria-label={done ? 'Unlocked' : 'Locked'}>

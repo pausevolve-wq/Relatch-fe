@@ -46,7 +46,9 @@ function Privacy() {
       <Ul>
         <li><span className="text-fg">PostHog</span> — records product events (for example: which AI agent a skill is made for, whether a skill was generated, downloaded, copied or deleted, the steps of signing up or logging in, and feedback ratings), click and scroll heatmaps, and session replays, to help us find usability problems and improve the product. Replays show the layout of the page and where you click; the text you type into fields and the text of your skills and document names are masked, and passwords and payment information are never captured. PostHog also records your approximate location (country and city, derived from your IP address), browser, device and the website that referred you. If you are signed in, these events are linked to your account ID, name and email address. Your documents are not sent to PostHog.</li>
       </Ul>
-      <P>You can opt out of PostHog by disabling cookies in your browser settings.</P>
+      {/* 2026-11-20 (pre-launch review): "disable cookies" was not true here. PostHog runs with localStorage+cookie
+          persistence (analytics.ts), so blocking cookies alone does not stop it. */}
+      <P>To stop PostHog collecting data in your browser, use a content blocker that blocks analytics scripts. To have the PostHog data linked to you deleted, email us at hello@relatch.online.</P>
 
       <H3>2.2 Account Information</H3>
       <P>You can try Relatch once without an account (see 2.5). For regular use you need an account. Authentication and session management are handled by Clerk. You can sign in using Google OAuth or GitHub OAuth, or create an account with your email address and a password. When you sign in through Google or GitHub, Relatch receives a basic identity profile (such as your name, email address, and provider user ID) so that we can associate your session with your account; we do not receive your OAuth password. When you use email, we send a one-time code to that address to confirm it is yours (and, if you choose, to log you in). Your password is handled and stored by Clerk; Relatch never sees or stores it.</P>
