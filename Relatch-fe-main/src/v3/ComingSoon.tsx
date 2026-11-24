@@ -48,7 +48,7 @@ export function ComingSoon({ onBack, backLabel }: { onBack: () => void; backLabe
   }, []);
 
   return (
-    <div className="relative min-h-dvh">
+    <div className="relative min-h-dvh overflow-x-clip">
       <header className="chrome-x sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-ink/75 backdrop-blur-xl" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <button onClick={onBack} aria-label={backLabel} title={backLabel} className={cn('-ml-2 grid size-9 place-items-center rounded-lg text-fg-2 transition-colors hover:bg-white/[0.06] hover:text-fg', ring)}><ArrowLeftIcon size={18} /></button>
         <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-fg">Relatch in your agent</h1>
