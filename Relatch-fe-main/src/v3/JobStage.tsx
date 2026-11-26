@@ -31,6 +31,7 @@ import type { Unlock } from './auth/AuthSheet';
 import { estimateTokens } from '@/engine/core';
 import { cn } from '@/lib/utils';
 import { captureEvent } from '../analytics';
+import { ExportAsk, exportAskDue } from './ExportAsk';
 
 const pill = 'inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14.5px] font-medium transition-[background-color,color,transform,opacity] duration-200 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:pointer-events-none';
 const ring = 'focus-visible:outline-2 focus-visible:outline-white/60';
@@ -185,6 +186,9 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
   // Signed in, but what is on screen is still the preview (see Lock)
   const locked = signedIn && done.some((p) => p.locked);
 
+  // The one-question follow-up, offered once something has left Relatch (ExportAsk.tsx)
+  const [exportAsk, setExportAsk] = useState<'download' | 'copy' | null>(null);
+
   const download = async () => {
     if (!signedIn) return onSignUp(ask('download'));
     if (locked) return lock?.state === 'failed' ? lock.retry?.() : undefined;
@@ -198,6 +202,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
     // 2026-11-19 (PostHog rebuild): the skill left Relatch, the clearest "this was worth it" signal there is
     captureEvent('skill_exported', { action: 'download', target, files: skill.length, sections: skill.reduce((n, p) => n + countSections(p.content), 0) });
     setSaved(true);
+    if (exportAskDue()) setExportAsk('download');
     // Downloading completes the skill: no more documents join it after this.
     adding.complete();
     // Downloading is step 1 of setup, so carry the user straight into the rest of it.
@@ -210,7 +215,11 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
     try {
       await navigator.clipboard.writeText(claudeFile(skill[0].content, name)); setCopied(true); window.setTimeout(() => setCopied(false), 1600);
       captureEvent('skill_exported', { action: 'copy', target, files: skill.length, sections: countSections(skill[0].content) });
-    } catch { /* clipboard blocked */ }
+      if (exportAskDue()) setExportAsk('copy');
+    } catch (err: unknown) {
+      // 2026-11-26: a blocked clipboard used to vanish without a trace; now it is counted like a failed download
+      captureEvent('skill_export_failed', { action: 'copy', target, error: String((err as Error)?.message ?? err).slice(0, 200) });
+    }
   };
 
   // Back from the unlock sheet, signed in: do what they tapped. (A copy may be refused by the browser this long
@@ -309,6 +318,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
           </div>
         </div>
         {note && <p role="status" className="mt-3 flex items-start gap-2 text-[13px] text-amber-100"><WarningCircleIcon size={16} className="mt-px shrink-0" />{note}</p>}
+        {exportAsk && <ExportAsk action={exportAsk} target={target} agent={agent} onClose={() => setExportAsk(null)} />}
         {locked && lock?.state === 'failed' && <p role="status" className="mt-3 flex items-start gap-2 text-[13px] text-amber-100"><WarningCircleIcon size={16} className="mt-px shrink-0" />{lock.message}</p>}
       </header>
 

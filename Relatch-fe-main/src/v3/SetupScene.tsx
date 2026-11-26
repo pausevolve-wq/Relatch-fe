@@ -31,6 +31,7 @@ import {
 import { ClaudeLogo, CodexOutline } from './logos';
 import { SlidingThumb } from './SlidingThumb';
 import { cn } from '@/lib/utils';
+import { captureEvent } from '../analytics';
 
 gsap.registerPlugin(TextPlugin);
 
@@ -133,7 +134,7 @@ const Caret = () => <span className="ml-px inline-block h-[1.1em] w-[0.6em] tran
 
 function useCopy() {
   const [ok, setOk] = useState(false);
-  return { ok, copy: async (t: string) => { try { await navigator.clipboard.writeText(t); setOk(true); window.setTimeout(() => setOk(false), 1500); } catch { /* clipboard blocked */ } } };
+  return { ok, copy: async (t: string) => { try { await navigator.clipboard.writeText(t); captureEvent('setup_ask_copied', {}); setOk(true); window.setTimeout(() => setOk(false), 1500); } catch { /* clipboard blocked */ } } };
 }
 
 export interface SetupHandle { replay: () => void }
