@@ -43,15 +43,18 @@ const NOTE_KEY = 'relatch_v3_note';
 export function noteSeen(): boolean {
   try { return !!localStorage.getItem(NOTE_KEY); } catch { return true; }
 }
-// Signed-in people see the note again (Manas, 2026-11-26) when they make another skill or download, copy or open
-// one. So it doesn't nag, never more than once a day per browser: the time it last opened is kept here.
+// Signed-in people who skipped the note see it again when they make another skill or download, copy or open
+// one. Someone who filled it (NOTE_KEY = 'sent') never sees it again. So it doesn't nag, never more than once a
+// day per browser: the time it last opened is kept here.
 const SHOWN_KEY = 'relatch_v3_note_at';
 const AGAIN_AFTER_MS = 24 * 60 * 60 * 1000;
-/** A signed-in person may be shown the note now: the form is live and it last opened over a day ago (or never).
- *  Storage refused: not due, since nothing could remember that it was shown. */
+/** A signed-in person may be shown the note now: the form is live, they have not filled it (a "Not now" or never
+ *  seeing it both count as not filled) and it last opened over a day ago (or never).
+ *  Storage refused: not due, since nothing could remember that it was filled or shown. */
 export function noteDueAgain(): boolean {
   if (!NOTE_READY) return false;
   try {
+    if (localStorage.getItem(NOTE_KEY) === 'sent') return false;
     const at = Number(localStorage.getItem(SHOWN_KEY));
     return !Number.isFinite(at) || Date.now() - at > AGAIN_AFTER_MS;
   } catch { return false; }
