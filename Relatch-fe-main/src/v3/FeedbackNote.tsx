@@ -43,6 +43,21 @@ const NOTE_KEY = 'relatch_v3_note';
 export function noteSeen(): boolean {
   try { return !!localStorage.getItem(NOTE_KEY); } catch { return true; }
 }
+// Signed-in people see the note again (Manas, 2026-11-26) when they make another skill or download, copy or open
+// one. So it doesn't nag, never more than once a day per browser: the time it last opened is kept here.
+const SHOWN_KEY = 'relatch_v3_note_at';
+const AGAIN_AFTER_MS = 24 * 60 * 60 * 1000;
+/** A signed-in person may be shown the note now: the form is live and it last opened over a day ago (or never).
+ *  Storage refused: not due, since nothing could remember that it was shown. */
+export function noteDueAgain(): boolean {
+  if (!NOTE_READY) return false;
+  try {
+    const at = Number(localStorage.getItem(SHOWN_KEY));
+    return !Number.isFinite(at) || Date.now() - at > AGAIN_AFTER_MS;
+  } catch { return false; }
+}
+/** Call when the note opens */
+export function markNoteShown() { try { localStorage.setItem(SHOWN_KEY, String(Date.now())); } catch { /* nothing to remember with */ } }
 function remember(how: 'sent' | 'dismissed') {
   try { localStorage.setItem(NOTE_KEY, how); } catch { /* nothing to remember with */ }
 }
@@ -105,7 +120,7 @@ function PenCircle({ on }: { on: boolean }) {
   );
 }
 
-export function FeedbackNote({ target, onClose, knownEmail }: { target: string; onClose: () => void; knownEmail?: string }) {
+export function FeedbackNote({ target, onClose, knownEmail, again }: { target: string; onClose: () => void; knownEmail?: string; again?: boolean }) {
   const [stage, setStage] = useState<Stage>('writing');
   const [rating, setRating] = useState<Rating | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -193,7 +208,7 @@ export function FeedbackNote({ target, onClose, knownEmail }: { target: string; 
       rating: label,
       feedback: note,
       target,
-      source: knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill',
+      source: again ? 'v3-signed-in-again' : knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill',
       session_id: readStorage('rl_session_id') ?? '',
     });
     // Only with an address: an empty email field, or an empty _replyto, could be refused as invalid

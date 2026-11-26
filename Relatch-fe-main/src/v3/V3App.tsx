@@ -20,7 +20,7 @@ import { ContactPage } from './ContactPage';
 import { LegalPage } from './LegalPage';
 import { NotFound, leaveStrayPath, strayPath } from './ErrorScreens';
 import { captureEvent, registerProps } from '../analytics';
-import { FeedbackNote, NOTE_READY, noteSeen } from './FeedbackNote';
+import { FeedbackNote, NOTE_READY, noteSeen, noteDueAgain, markNoteShown } from './FeedbackNote';
 
 // SANDBOX ONLY (compiled out of production): the sandbox bar's "Crash the app" leaves this flag and reloads;
 // read once, so the crash screen's Reload brings the app back.
@@ -32,6 +32,7 @@ const SANDBOX_CRASH = (() => {
 // full skill after a Read / Copy unlock, so it never covers the skill they just unlocked before they've read it.
 const NOTE_AFTER_DOWNLOAD = 900;
 const NOTE_AFTER_UNLOCK = 20_000;
+const NOTE_AFTER_COPY = 3000; // a copied skill is on its way to Claude/Codex: a beat, then the note
 // SANDBOX ONLY: the sandbox bar's "Show the feedback note" opens the note on the next load, once
 const SANDBOX_NOTE = (() => {
   if (!import.meta.env.VITE_SANDBOX) return false;
@@ -215,6 +216,7 @@ export default function V3App() {
   const [noteOpen, setNoteOpen] = useState(false);
   const noteTarget = useRef<Target>(target); // the agent of the skill they downloaded, sent with the note
   const noteWait = useRef(NOTE_AFTER_DOWNLOAD); // how long the screen stays clear before the note comes in
+  const noteAgain = useRef(false); // this showing is a repeat for a signed-in person (sent with the note)
   if (SANDBOX_CRASH) throw new Error('Sandbox: a crash on purpose (sandbox bar)');
   // Settings > Your data: skill history paused, so new skills are not kept (the way back is in the rail).
   const [paused, setPaused] = useState(() => { try { return localStorage.getItem('relatch_v3_history_paused') === '1'; } catch { return false; } });
@@ -407,19 +409,36 @@ export default function V3App() {
     else if (live) setInstall({ target: job.target, name: dl?.name ?? liveParts(job.items).find((p) => p.status === 'done')?.name ?? '', plan: dl?.plan, parts: liveParts(job.items) });
     else setInstall({ target, name: '' });
   };
+  // Signed in: the same note again on another skill, or a download, copy or open of one (at most once a day, see
+  // noteDueAgain). Nothing while a note is already due or open.
+  const askAgain = (wait: number) => {
+    if (!isSignedIn || noteDue || noteOpen || !noteDueAgain()) return;
+    noteWait.current = wait; noteAgain.current = true; setNoteDue(true);
+  };
+  const askAgainRef = useRef(askAgain);
+  askAgainRef.current = askAgain;
+  // Another skill finished (unlocked and the full skill on screen): a while with it first, to read it
+  useEffect(() => { if (job.phase === 'done' && !lockedKey) { noteTarget.current = job.target; askAgainRef.current(NOTE_AFTER_UNLOCK); } }, [job.phase, lockedKey]);
+  // A skill opened from the history (not on a reload: the place restored from the last visit isn't a choice)
+  const viewed = useRef(viewing);
+  useEffect(() => {
+    if (viewing && viewing !== viewed.current) { const sk = skills.find((x) => x.id === viewing); if (sk) noteTarget.current = sk.target; askAgainRef.current(NOTE_AFTER_UNLOCK); }
+    viewed.current = viewing;
+  }, [viewing]);
   const downloaded = (of: string, t: Target, name: string, plan: Plan, parts: Part[]) => {
     lastDownload.current = { of, name, plan };
     setInstall({ target: t, name, plan, parts });
     noteTarget.current = t;
     // Already due from a Read / Copy unlock: a download now brings it in after the guide, not after the long wait
     if (noteDue || ((!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen())) { noteWait.current = NOTE_AFTER_DOWNLOAD; setNoteDue(true); }
+    else askAgain(NOTE_AFTER_DOWNLOAD);
     fromUnlock.current = false;
   };
   // Never over another pop-up or page: it waits until the install guide, the sign-up sheet, the account
   // settings (2026-11-20: likely inside the 20s after a Read / Copy unlock) and the 404 are gone
   useEffect(() => {
     if (!noteDue || install || auth || account || stray || showPage) return;
-    const timer = window.setTimeout(() => { setNoteDue(false); setNoteOpen(true); }, noteWait.current);
+    const timer = window.setTimeout(() => { setNoteDue(false); markNoteShown(); setNoteOpen(true); }, noteWait.current);
     return () => window.clearTimeout(timer);
   }, [noteDue, install, auth, account, stray, showPage]);
 
@@ -534,10 +553,10 @@ export default function V3App() {
           {composing ? (
             <Start key={workspace ? 'compose' : 'intro'} compact={workspace} target={target} onTarget={setTarget} onFiles={(files) => guard(() => start(files))} onSample={() => guard(sample)} />
           ) : saved ? (
-            <JobStage key={saved.id} saved phase="done" parts={savedParts(saved)} target={saved.target} signedIn={!!isSignedIn} adding={FINISHED} onInstall={(name, plan) => downloaded(saved.id, saved.target, name, plan, savedParts(saved))} onAnother={() => guard(home)} onSignUp={openSignUp} />
+            <JobStage key={saved.id} saved phase="done" parts={savedParts(saved)} target={saved.target} signedIn={!!isSignedIn} adding={FINISHED} onInstall={(name, plan) => downloaded(saved.id, saved.target, name, plan, savedParts(saved))} onAnother={() => guard(home)} onSignUp={openSignUp} onCopied={() => askAgain(NOTE_AFTER_COPY)} />
           ) : (<>
             {(job.phase === 'thinking' || job.phase === 'done') && (
-              <JobStage phase={job.phase} parts={liveParts(job.items)} target={job.target} signedIn={!!isSignedIn} adding={{ canAdd: job.canAdd, left: job.left, closed: job.closed, onAdd: addFiles, complete: job.complete }} onInstall={(name, plan) => downloaded(liveKey, job.target, name, plan, liveParts(job.items))} onAnother={() => guard(home)} onSignUp={openSignUp} resume={resume} onResumed={() => { fromUnlock.current = resume === 'download'; setResume(null); }} lock={lock} />
+              <JobStage phase={job.phase} parts={liveParts(job.items)} target={job.target} signedIn={!!isSignedIn} adding={{ canAdd: job.canAdd, left: job.left, closed: job.closed, onAdd: addFiles, complete: job.complete }} onInstall={(name, plan) => downloaded(liveKey, job.target, name, plan, liveParts(job.items))} onAnother={() => guard(home)} onSignUp={openSignUp} resume={resume} onCopied={() => askAgain(NOTE_AFTER_COPY)} onResumed={() => { fromUnlock.current = resume === 'download'; setResume(null); }} lock={lock} />
             )}
 
             {job.phase === 'error' && (
@@ -587,7 +606,7 @@ export default function V3App() {
       <HelpMenu onOpen={openPage} />
 
       {install && <InstallDialog target={install.target} name={install.name} parts={install.parts} plan={install.plan} onClose={() => setInstall(null)} />}
-      {noteOpen && <FeedbackNote target={noteTarget.current} knownEmail={isSignedIn ? user?.primaryEmailAddress?.emailAddress ?? undefined : undefined} onClose={() => setNoteOpen(false)} />}
+      {noteOpen && <FeedbackNote target={noteTarget.current} knownEmail={isSignedIn ? user?.primaryEmailAddress?.emailAddress ?? undefined : undefined} again={noteAgain.current && noteSeen()} onClose={() => { setNoteOpen(false); noteAgain.current = false; }} />}
       {account && isSignedIn && <AccountDialog onClose={() => setAccount(false)} />}
       {auth && <AuthSheet view={auth} onClose={() => setAuth(null)} />}
       {unlock && !auth && <AuthSheet view="sign-up" unlock={unlock} onClose={() => { setUnlock(null); setPendingAction(null); }} />}
