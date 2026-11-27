@@ -28,7 +28,11 @@
     <meta name="twitter:image:alt" content="Relatch, the context compiler. Documents in, verified agent skills out." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+    <!-- 2026-11-28 (blank-page report): the Google Fonts stylesheet is added by src/v3/main.tsx, no longer here. A
+         stylesheet in <head> holds the whole app back (its script waits for it and nothing paints), so a hung
+         fonts.googleapis.com left a black page that never finished loading. -->
+    <!-- The watchdog (public/boot-watch.js): outside the bundle, so it still runs when the bundle never arrives -->
+    <script async src="/boot-watch.js"></script>
   </head>
   <body>
     <div id="root"></div>
