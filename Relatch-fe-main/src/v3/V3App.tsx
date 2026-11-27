@@ -20,7 +20,7 @@ import { ContactPage } from './ContactPage';
 import { LegalPage } from './LegalPage';
 import { NotFound, leaveStrayPath, strayPath } from './ErrorScreens';
 import { captureEvent, registerProps } from '../analytics';
-import { FeedbackNote, NOTE_READY, noteSeen, noteDueAgain, markNoteShown } from './FeedbackNote';
+import { FeedbackNote, NOTE_READY, noteSeen, noteDueAgain, markNoteShown, type SignedInAsk } from './FeedbackNote';
 
 // SANDBOX ONLY (compiled out of production): the sandbox bar's "Crash the app" leaves this flag and reloads;
 // read once, so the crash screen's Reload brings the app back.
@@ -216,7 +216,8 @@ export default function V3App() {
   const [noteOpen, setNoteOpen] = useState(false);
   const noteTarget = useRef<Target>(target); // the agent of the skill they downloaded, sent with the note
   const noteWait = useRef(NOTE_AFTER_DOWNLOAD); // how long the screen stays clear before the note comes in
-  const noteAgain = useRef(false); // this showing is a repeat for a signed-in person (sent with the note)
+  // Set when this showing comes from the signed-in rule (askAgain), cleared when a first-skill path takes it over
+  const noteAsk = useRef<SignedInAsk | null>(null);
   if (SANDBOX_CRASH) throw new Error('Sandbox: a crash on purpose (sandbox bar)');
   // Settings > Your data: skill history paused, so new skills are not kept (the way back is in the rail).
   const [paused, setPaused] = useState(() => { try { return localStorage.getItem('relatch_v3_history_paused') === '1'; } catch { return false; } });
@@ -259,7 +260,8 @@ export default function V3App() {
       // ANON_PREVIEW_ONLY on nobody without an account can download, so anyone who unlocked to Read or Copy never
       // saw it (feedback_note_shown had never fired in production). A download unlock keeps its own path
       // (`downloaded`, after the install guide); Read and Copy get a while with the full skill first.
-      if (a !== 'download' && NOTE_READY && !noteSeen()) { noteTarget.current = job.target; noteWait.current = NOTE_AFTER_UNLOCK; setNoteDue(true); }
+      // (noteAsk cleared: askAgain may have run a render earlier, when the unlocked skill appeared)
+      if (a !== 'download' && NOTE_READY && !noteSeen()) { noteTarget.current = job.target; noteWait.current = NOTE_AFTER_UNLOCK; noteAsk.current = null; setNoteDue(true); }
       return;
     }
     wantAction.current = null;
@@ -413,7 +415,7 @@ export default function V3App() {
   // noteDueAgain). Nothing while a note is already due or open.
   const askAgain = (wait: number) => {
     if (!isSignedIn || noteDue || noteOpen || !noteDueAgain()) return;
-    noteWait.current = wait; noteAgain.current = true; setNoteDue(true);
+    noteWait.current = wait; noteAsk.current = noteSeen() ? 'v3-signed-in-again' : 'v3-signed-in'; setNoteDue(true);
   };
   const askAgainRef = useRef(askAgain);
   askAgainRef.current = askAgain;
@@ -430,17 +432,20 @@ export default function V3App() {
     setInstall({ target: t, name, plan, parts });
     noteTarget.current = t;
     // Already due from a Read / Copy unlock: a download now brings it in after the guide, not after the long wait
-    if (noteDue || ((!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen())) { noteWait.current = NOTE_AFTER_DOWNLOAD; setNoteDue(true); }
+    const first = (!isSignedIn || fromUnlock.current) && NOTE_READY && !noteSeen();
+    if (noteDue || first) { if (first) noteAsk.current = null; noteWait.current = NOTE_AFTER_DOWNLOAD; setNoteDue(true); }
     else askAgain(NOTE_AFTER_DOWNLOAD);
     fromUnlock.current = false;
   };
   // Never over another pop-up or page: it waits until the install guide, the sign-up sheet, the account
-  // settings (2026-11-20: likely inside the 20s after a Read / Copy unlock) and the 404 are gone
+  // settings (2026-11-20: likely inside the 20s after a Read / Copy unlock) and the 404 are gone.
+  // 2026-11-28 review: nor over a skill being built (someone who opened a skill, then started another inside the
+  // 20 s, was asked "how did it go" mid-build); it comes in the usual wait after the build ends.
   useEffect(() => {
-    if (!noteDue || install || auth || account || stray || showPage) return;
+    if (!noteDue || install || auth || account || stray || showPage || job.phase === 'thinking') return;
     const timer = window.setTimeout(() => { setNoteDue(false); markNoteShown(); setNoteOpen(true); }, noteWait.current);
     return () => window.clearTimeout(timer);
-  }, [noteDue, install, auth, account, stray, showPage]);
+  }, [noteDue, install, auth, account, stray, showPage, job.phase]);
 
   if (stray) {
     // Back into the app at its own address; it opens wherever they were, as any visit does
@@ -606,7 +611,7 @@ export default function V3App() {
       <HelpMenu onOpen={openPage} />
 
       {install && <InstallDialog target={install.target} name={install.name} parts={install.parts} plan={install.plan} onClose={() => setInstall(null)} />}
-      {noteOpen && <FeedbackNote target={noteTarget.current} knownEmail={isSignedIn ? user?.primaryEmailAddress?.emailAddress ?? undefined : undefined} again={noteAgain.current && noteSeen()} onClose={() => { setNoteOpen(false); noteAgain.current = false; }} />}
+      {noteOpen && <FeedbackNote target={noteTarget.current} knownEmail={isSignedIn ? user?.primaryEmailAddress?.emailAddress ?? undefined : undefined} askedAs={noteAsk.current ?? undefined} onClose={() => { setNoteOpen(false); noteAsk.current = null; }} />}
       {account && isSignedIn && <AccountDialog onClose={() => setAccount(false)} />}
       {auth && <AuthSheet view={auth} onClose={() => setAuth(null)} />}
       {unlock && !auth && <AuthSheet view="sign-up" unlock={unlock} onClose={() => { setUnlock(null); setPendingAction(null); }} />}

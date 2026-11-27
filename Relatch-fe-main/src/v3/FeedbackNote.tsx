@@ -123,7 +123,10 @@ function PenCircle({ on }: { on: boolean }) {
   );
 }
 
-export function FeedbackNote({ target, onClose, knownEmail, again }: { target: string; onClose: () => void; knownEmail?: string; again?: boolean }) {
+/** `askedAs`: this showing came from the signed-in rule (V3App's askAgain): their first look at the note, or a
+ *  repeat after a "Not now". Sent as the submission's `source` so WebForms can tell them apart. */
+export type SignedInAsk = 'v3-signed-in' | 'v3-signed-in-again';
+export function FeedbackNote({ target, onClose, knownEmail, askedAs }: { target: string; onClose: () => void; knownEmail?: string; askedAs?: SignedInAsk }) {
   const [stage, setStage] = useState<Stage>('writing');
   const [rating, setRating] = useState<Rating | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -211,7 +214,8 @@ export function FeedbackNote({ target, onClose, knownEmail, again }: { target: s
       rating: label,
       feedback: note,
       target,
-      source: again ? 'v3-signed-in-again' : knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill',
+      // 2026-11-28 review: a signed-in person's FIRST showing used to fall through to 'v3-unlocked-skill' here
+      source: askedAs ?? (knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill'),
       session_id: readStorage('rl_session_id') ?? '',
     });
     // Only with an address: an empty email field, or an empty _replyto, could be refused as invalid
