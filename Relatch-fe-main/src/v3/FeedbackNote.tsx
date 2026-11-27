@@ -43,6 +43,24 @@ const NOTE_KEY = 'relatch_v3_note';
 export function noteSeen(): boolean {
   try { return !!localStorage.getItem(NOTE_KEY); } catch { return true; }
 }
+// Signed-in people who skipped the note see it again when they make another skill or download, copy or open
+// one. Someone who filled it (NOTE_KEY = 'sent') never sees it again. So it doesn't nag, never more than once a
+// day per browser: the time it last opened is kept here.
+const SHOWN_KEY = 'relatch_v3_note_at';
+const AGAIN_AFTER_MS = 24 * 60 * 60 * 1000;
+/** A signed-in person may be shown the note now: the form is live, they have not filled it (a "Not now" or never
+ *  seeing it both count as not filled) and it last opened over a day ago (or never).
+ *  Storage refused: not due, since nothing could remember that it was filled or shown. */
+export function noteDueAgain(): boolean {
+  if (!NOTE_READY) return false;
+  try {
+    if (localStorage.getItem(NOTE_KEY) === 'sent') return false;
+    const at = Number(localStorage.getItem(SHOWN_KEY));
+    return !Number.isFinite(at) || Date.now() - at > AGAIN_AFTER_MS;
+  } catch { return false; }
+}
+/** Call when the note opens */
+export function markNoteShown() { try { localStorage.setItem(SHOWN_KEY, String(Date.now())); } catch { /* nothing to remember with */ } }
 function remember(how: 'sent' | 'dismissed') {
   try { localStorage.setItem(NOTE_KEY, how); } catch { /* nothing to remember with */ }
 }
@@ -105,7 +123,10 @@ function PenCircle({ on }: { on: boolean }) {
   );
 }
 
-export function FeedbackNote({ target, onClose, knownEmail }: { target: string; onClose: () => void; knownEmail?: string }) {
+/** `askedAs`: this showing came from the signed-in rule (V3App's askAgain): their first look at the note, or a
+ *  repeat after a "Not now". Sent as the submission's `source` so WebForms can tell them apart. */
+export type SignedInAsk = 'v3-signed-in' | 'v3-signed-in-again';
+export function FeedbackNote({ target, onClose, knownEmail, askedAs }: { target: string; onClose: () => void; knownEmail?: string; askedAs?: SignedInAsk }) {
   const [stage, setStage] = useState<Stage>('writing');
   const [rating, setRating] = useState<Rating | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -193,7 +214,8 @@ export function FeedbackNote({ target, onClose, knownEmail }: { target: string; 
       rating: label,
       feedback: note,
       target,
-      source: knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill',
+      // 2026-11-28 review: a signed-in person's FIRST showing used to fall through to 'v3-unlocked-skill' here
+      source: askedAs ?? (knownEmail ? 'v3-unlocked-skill' : 'v3-first-skill'),
       session_id: readStorage('rl_session_id') ?? '',
     });
     // Only with an address: an empty email field, or an empty _replyto, could be refused as invalid
