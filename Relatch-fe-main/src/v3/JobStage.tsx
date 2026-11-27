@@ -80,7 +80,7 @@ function FileHeader({ yaml, agent }: { yaml: string; agent: string }) {
   );
 }
 
-function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, onSignUp, resume, onResumed, lock }: { parts: Part[]; target: Target; signedIn: boolean; adding: Adding; pick: () => void; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void; lock?: Lock | null }) {
+function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, onSignUp, resume, onResumed, lock, onCopied }: { parts: Part[]; target: Target; signedIn: boolean; adding: Adding; pick: () => void; onInstall: (name: string, plan: Plan) => void; onCopied?: () => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void; lock?: Lock | null }) {
   const done = useMemo(() => parts.filter((p) => p.status === 'done'), [parts]);
   const pending = parts.filter((p) => p.status === 'thinking').length;
   const [name, setName] = useState(() => done[0]?.name || 'Untitled skill');
@@ -210,7 +210,11 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
     try {
       await navigator.clipboard.writeText(claudeFile(skill[0].content, name)); setCopied(true); window.setTimeout(() => setCopied(false), 1600);
       captureEvent('skill_exported', { action: 'copy', target, files: skill.length, sections: countSections(skill[0].content) });
-    } catch { /* clipboard blocked */ }
+      onCopied?.(); // the feedback note may be due (V3App)
+    } catch (err: unknown) {
+      // 2026-11-26: a blocked clipboard used to vanish without a trace; now it is counted like a failed download
+      captureEvent('skill_export_failed', { action: 'copy', target, error: String((err as Error)?.message ?? err).slice(0, 200) });
+    }
   };
 
   // Back from the unlock sheet, signed in: do what they tapped. (A copy may be refused by the browser this long
@@ -377,7 +381,7 @@ function Preview({ parts, target, signedIn, adding, pick, onInstall, onAnother, 
 }
 
 // `saved` is a skill reopened from the history: there is no thinking to watch, so it opens as the preview.
-export function JobStage({ phase, parts, target, signedIn, saved = false, adding, onInstall, onAnother, onSignUp, resume, onResumed, lock }: { phase: 'thinking' | 'done'; parts: Part[]; target: Target; signedIn: boolean; saved?: boolean; adding: Adding; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void; lock?: Lock | null }) {
+export function JobStage({ phase, parts, target, signedIn, saved = false, adding, onInstall, onAnother, onSignUp, resume, onResumed, lock, onCopied }: { onCopied?: () => void; phase: 'thinking' | 'done'; parts: Part[]; target: Target; signedIn: boolean; saved?: boolean; adding: Adding; onInstall: (name: string, plan: Plan) => void; onAnother: () => void; onSignUp: (unlock?: Unlock) => void; resume?: Unlock['action'] | null; onResumed?: () => void; lock?: Lock | null }) {
   const card = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   // Mounted onto a skill that is already finished (a saved one, or the live one after coming back from
@@ -451,7 +455,7 @@ export function JobStage({ phase, parts, target, signedIn, saved = false, adding
       <div ref={card} className={cn('relative mx-auto w-full rounded-[28px] border border-line bg-ink-1', view === 'thinking' ? 'max-w-[620px]' : 'flex max-h-[max(320px,calc(100dvh-112px-env(safe-area-inset-top,0px)))] max-w-[clamp(980px,78%,1160px)] flex-col sm:max-h-[max(320px,calc(100dvh-144px-env(safe-area-inset-top,0px)))] lg:max-h-[max(320px,calc(100dvh-88px))]')}>
         {view === 'thinking' || !parts.some((p) => p.status === 'done')
           ? <Thinking steps={focus?.steps ?? []} running className="rounded-none border-0 bg-transparent" files={parts.length > 1 ? parts.map((p) => ({ name: p.fileName ?? p.name, status: p.status })) : undefined} footer={addButton} />
-          : <Preview parts={parts} target={target} signedIn={signedIn} adding={adding} pick={pick} onInstall={onInstall} onAnother={onAnother} onSignUp={onSignUp} resume={resume} onResumed={onResumed} lock={lock} />}
+          : <Preview parts={parts} target={target} signedIn={signedIn} adding={adding} pick={pick} onInstall={onInstall} onAnother={onAnother} onSignUp={onSignUp} resume={resume} onResumed={onResumed} lock={lock} onCopied={onCopied} />}
 
         {over && (
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-40 grid place-items-center rounded-[28px] border-2 border-dashed border-white/35 bg-ink/75 p-6 text-center backdrop-blur-sm">
